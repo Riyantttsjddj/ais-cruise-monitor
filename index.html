@@ -543,6 +543,7 @@
   var selectedMmsi = null;       // MMSI kapal yang sedang ditampilkan
   var lastResults = [];          // hasil pencarian terakhir (untuk tombol +)
   var trailCache = {};           // mmsi -> array titik
+  var serverTime = null;         // stempel waktu snapshot terakhir yang diterapkan
   var anim = { lat: null, lon: null, hdg: 0 };
   var target = { lat: null, lon: null, hdg: 0 };
   var haveFix = false;
@@ -766,6 +767,9 @@
   function apply(data) {
     // status pengambilan data
     var st = data.status || {};
+    // Dicatat supaya tombol 🔄 Cek di versi Vercel bisa membedakan "data sudah
+    // benar-benar berganti" dari "permintaan sudah dikirim".
+    if (data.server_time) serverTime = data.server_time;
     var pill = $("conn");
     var state = st.state || "starting";
     pill.className = "pill " + (state === "ok" ? "online" : state === "error" ? "offline" : "connecting");
@@ -853,11 +857,64 @@
     banner.classList.add("show");
   }
 
+  // ------------------------------------------------------------ sumber data
+  // Versi lokal (`python3 tracker.py`) menyajikan /api/state dan SSE
+  // /api/stream dari proses Python yang hidup terus. Versi Vercel tidak punya
+  // proses seperti itu: tidak ada cron yang cukup rapat, tidak ada thread yang
+  // boleh hidup melewati balasan. Di sana pengecekannya dikerjakan GitHub
+  // Actions tiap 5 menit dan hasilnya ditaruh di branch `data` repo, yang
+  // dibaca langsung oleh halaman ini.
+  //
+  // Alamat repo di bawah ini perlu diganti kalau repo Anda dinamai lain.
+  var URL_JAUH =
+    "https://raw.githubusercontent.com/Riyantttsjddj/ais-cruise-monitor/data/data.json";
+
+  var DATA_URL = null;    // ditentukan sekali, saat halaman dibuka
+  var MODE_LOKAL = false; // true = ada server Python (SSE + 6 detik)
+
+  // Membedakan lokal dari Vercel dengan mencoba /api/state lebih dulu, bukan
+  // dengan menebak dari hostname. Menebak akan salah untuk kasus yang memang
+  // didukung versi lokal: dibuka dari HP lewat alamat LAN (`--host 0.0.0.0`),
+  // yang hostname-nya alamat IP dan bukan `localhost`.
+  var pilihSumberPromise = null;
+  function pilihSumber() {
+    if (pilihSumberPromise) return pilihSumberPromise;
+    pilihSumberPromise = fetch("/api/state")
+      .then(function (r) {
+        if (!r.ok) throw new Error("bukan server lokal");
+        return r.json();
+      })
+      .then(function (d) {
+        MODE_LOKAL = true;
+        DATA_URL = "/api/state";
+        apply(d);
+        return DATA_URL;
+      })
+      .catch(function () {
+        // Termasuk kasus berkas ini dibuka langsung dari disk: tidak ada
+        // server sama sekali. Tetap pilih sumber jauh supaya halamannya
+        // menampilkan sesuatu, bukan kosong.
+        MODE_LOKAL = false;
+        DATA_URL = URL_JAUH;
+        return DATA_URL;
+      });
+    return pilihSumberPromise;
+  }
+
   function pullFull() {
-    fetch("/api/state").then(function (r) { return r.json(); }).then(apply).catch(function () {});
+    pilihSumber().then(function (url) {
+      // Penanda waktu di query selalu ditambahkan. Untuk sumber jauh itu wajib:
+      // raw.githubusercontent mengirim `cache-control: max-age=300`, jadi tanpa
+      // ini peramban akan menyajikan salinan lamanya sendiri sampai 5 menit,
+      // dan halaman tampak beku walau polling-nya jalan. Server lokal tidak
+      // memasalahkan query tambahan — ia memotongnya di "?".
+      return fetch(url + "?t=" + Date.now());
+    }).then(function (r) { return r.json(); }).then(apply).catch(function () {});
   }
 
   // ------------------------------------------------------------------ SSE
+  // Hanya ada di versi lokal. Di Vercel tidak ada koneksi yang bisa dibiarkan
+  // terbuka, jadi pembaruannya lewat polling berkala.
   var es = null;
   function connect() {
     if (es) es.close();
@@ -881,6 +938,12 @@
       $("conn-text").textContent = "Menyambung ulang…";
     };
   }
+
+  // Jeda polling di versi Vercel. Sengaja lebih rapat daripada irama poller-nya
+  // (5 menit): 30 detik membuat data baru muncul cepat setelah runner selesai,
+  // dan biayanya satu permintaan 3,5 KB ke CDN GitHub. Yang TIDAK dilakukan
+  // adalah mempercepat datanya sendiri — itu tetap ditentukan jadwal Actions.
+  var JEDA_JAUH = 30000;
 
   // -------------------------------------------------------------- interaksi
   function togglePanel() {
@@ -928,34 +991,90 @@
   // ada laporan posisi baru — supaya jelas bedanya "sudah dicek" dan "ada data baru".
   var refreshBusy = false;
 
+  // Laporkan keadaan kapal yang sedang ditampilkan, bukan selalu yang pertama
+  // di daftar. Dipakai kedua mode.
+  function laporkan(d, before) {
+    apply(d);
+    var s = null;
+    for (var i = 0; i < (d.ships || []).length; i++) {
+      if (d.ships[i].mmsi === selectedMmsi) { s = d.ships[i]; break; }
+    }
+    s = s || (d.ships || [])[0];
+    if (!s) { toast("Sumber tidak mengembalikan data"); return; }
+    if (s.reported && s.reported !== before) {
+      toast("Laporan baru: " + s.reported);
+    } else {
+      toast("Sudah dicek — kapal belum kirim laporan baru (" +
+            (s.reported || "waktu tidak diketahui") + ")");
+    }
+  }
+
+  // Versi lokal: servernya memang bisa mengecek saat itu juga, jadi cukup ambil
+  // hasilnya setelah jeda singkat.
+  function cekSekarang(before) {
+    return fetch("/api/refresh", { method: "GET" })
+      .then(function () {
+        return new Promise(function (ok) { setTimeout(ok, 3500); });
+      })
+      .then(function () { return fetch("/api/state"); })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { laporkan(d, before); });
+  }
+
+  // Versi Vercel: /api/refresh hanya MEMINTA GitHub menjalankan poller-nya —
+  // yang mengecek tetap runner GitHub, dan runner perlu waktu untuk mulai.
+  // Jadi tombol ini menunggu sampai stempel waktu data benar-benar berubah,
+  // bukan sekadar "permintaan sudah terkirim". Itu bedanya dengan versi lokal,
+  // dan pesannya dibuat jujur supaya tidak terkesan instan.
+  var BATAS_TUNGGU = 150000;   // 2,5 menit — jadwal normalnya 5 menit sekali
+
+  function tungguStempelBaru(awal, batasMs) {
+    var mulai = Date.now();
+    return new Promise(function (selesai) {
+      (function sekali() {
+        fetch(URL_JAUH + "?t=" + Date.now())
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            // server_time adalah waktu snapshot itu dibuat. Kalau sudah berbeda
+            // dari yang tadi, berarti run baru sudah selesai dan mendorong hasilnya.
+            if (d.server_time && d.server_time !== awal) { selesai(d); return; }
+            if (Date.now() - mulai > batasMs) { selesai(null); return; }
+            setTimeout(sekali, 5000);
+          })
+          .catch(function () {
+            if (Date.now() - mulai > batasMs) { selesai(null); return; }
+            setTimeout(sekali, 5000);
+          });
+      })();
+    });
+  }
+
+  function mintaCek(b, before) {
+    return fetch("/api/refresh", { method: "GET" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { toast(d.error || "Gagal meminta pembaruan"); return; }
+        b.textContent = "⏳ Menunggu runner…";
+        return tungguStempelBaru(serverTime, BATAS_TUNGGU).then(function (baru) {
+          if (!baru) {
+            toast("Sudah diminta, tapi runner GitHub belum selesai. " +
+                  "Coba lagi sebentar lagi.");
+            return;
+          }
+          laporkan(baru, before);
+        });
+      });
+  }
+
   $("refresh-btn").onclick = function () {
     if (refreshBusy) return;
     refreshBusy = true;
     var b = this;
     var before = current ? current.reported : null;
     b.textContent = "⏳ Mencari…";
-    fetch("/api/refresh", { method: "GET" })
+    pilihSumber()
       .then(function () {
-        return new Promise(function (ok) { setTimeout(ok, 3500); });
-      })
-      .then(function () { return fetch("/api/state"); })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        apply(d);
-        // Laporkan keadaan kapal yang sedang ditampilkan, bukan selalu yang
-        // pertama di daftar.
-        var s = null;
-        for (var i = 0; i < (d.ships || []).length; i++) {
-          if (d.ships[i].mmsi === selectedMmsi) { s = d.ships[i]; break; }
-        }
-        s = s || (d.ships || [])[0];
-        if (!s) { toast("Sumber tidak mengembalikan data"); return; }
-        if (s.reported && s.reported !== before) {
-          toast("Laporan baru: " + s.reported);
-        } else {
-          toast("Sudah dicek — kapal belum kirim laporan baru (" +
-                (s.reported || "waktu tidak diketahui") + ")");
-        }
+        return MODE_LOKAL ? cekSekarang(before) : mintaCek(b, before);
       })
       .catch(function () { toast("Gagal memeriksa sumber"); })
       .then(function () { refreshBusy = false; b.textContent = "🔄 Cek"; });
@@ -1173,8 +1292,18 @@
   }, 1000);
 
   requestAnimationFrame(step);
-  pullFull();
-  connect();
+  // Urutannya penting: sumbernya ditentukan dulu (lokal atau Vercel), baru
+  // cara pembaruannya dipilih. `pullFull()` di dalam `.then` sudah memakai
+  // DATA_URL yang benar; kalau dipanggil sebelum sumbernya diketahui, ia akan
+  // menembak ke tempat yang salah lebih dulu.
+  pilihSumber().then(function () {
+    pullFull();
+    if (MODE_LOKAL) {
+      connect();                        // SSE, dorongan tiap ada perubahan
+    } else {
+      setInterval(pullFull, JEDA_JAUH); // polling, karena tidak ada SSE
+    }
+  });
 
   // Saat layar berubah ukuran / ponsel diputar: pasang ulang kontrol peta dan
   // gambar ulang pil status (teksnya beda untuk layar sempit). Diredam supaya

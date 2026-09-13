@@ -762,25 +762,19 @@ class Store:
             return self.snapshot_locked(trail_limit)
 
 
-def save_config(path: Path, store: Store):
-    """Tulis ulang daftar kapal ke ships.json supaya penambahan bertahan
-    setelah restart.
+def config_payload(cfg: dict, store: Store) -> dict:
+    """Bentuk isi ships.json dari store, di atas `cfg` yang sudah ada.
 
-    Isi berkas dibaca dulu dan hanya array "ships" yang diganti — kunci lain
-    (mis. "_catatan" dan "bbox") dipertahankan apa adanya. Ditulis atomik
-    dengan pola yang sama seperti Store.save() supaya berkas tidak pernah
-    tertinggal dalam keadaan setengah jadi.
+    Dipisah dari save_config() supaya versi serverless bisa memakai logika
+    penggabungan yang sama persis tanpa menyentuh berkas: di sana hasilnya
+    dikirim ke GitHub Contents API untuk di-commit, bukan ditulis ke disk.
+    Kalau logikanya sampai terduplikasi, cepat atau lambat keduanya akan
+    berbeda dan catatan tulisan tangan pengguna hilang di salah satu jalur.
+
+    Entri asli disimpan per MMSI. Tiap entri baru dimulai dari salinan entri
+    lama, jadi kunci yang ditulis tangan dan tidak dikenal skrip (mis. "note"
+    atau "callsign") tidak ikut terhapus saat berkas ditulis ulang.
     """
-    try:
-        cfg = json.loads(path.read_text())
-        if not isinstance(cfg, dict):
-            cfg = {}
-    except (OSError, ValueError):
-        cfg = {}
-
-    # Entri asli disimpan per MMSI. Tiap entri baru dimulai dari salinan entri
-    # lama, jadi kunci yang ditulis tangan dan tidak dikenal skrip (mis. "note"
-    # atau "callsign") tidak ikut terhapus saat berkas ditulis ulang.
     old = {}
     for item in (cfg.get("ships") or []):
         if isinstance(item, dict) and item.get("mmsi") is not None:
@@ -801,6 +795,26 @@ def save_config(path: Path, store: Store):
                     item[key] = value
             ships.append({k: v for k, v in item.items() if v not in ("", None)})
         cfg["ships"] = ships
+    return cfg
+
+
+def save_config(path: Path, store: Store):
+    """Tulis ulang daftar kapal ke ships.json supaya penambahan bertahan
+    setelah restart.
+
+    Isi berkas dibaca dulu dan hanya array "ships" yang diganti — kunci lain
+    (mis. "_catatan" dan "bbox") dipertahankan apa adanya. Ditulis atomik
+    dengan pola yang sama seperti Store.save() supaya berkas tidak pernah
+    tertinggal dalam keadaan setengah jadi.
+    """
+    try:
+        cfg = json.loads(path.read_text())
+        if not isinstance(cfg, dict):
+            cfg = {}
+    except (OSError, ValueError):
+        cfg = {}
+
+    cfg = config_payload(cfg, store)
 
     tmp = path.with_suffix(".tmp")
     try:
