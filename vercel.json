@@ -1,9 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-
-  "//": "Tidak ada build step dan tidak ada framework: index.html disajikan apa adanya, dan tiap berkas di api/ menjadi satu fungsi Python. Karena itu tidak ada 'buildCommand' maupun 'outputDirectory' di sini.",
-
-  "//functions": "Pencarian dan endpoint tulis memanggil GitHub API dan situs sumber, jadi bisa lewat dari batas bawaan. 60 detik masih jauh di bawah plafon 300 detik milik paket Hobby.",
   "functions": {
     "api/*.py": { "maxDuration": 60 }
   }

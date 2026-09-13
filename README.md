@@ -404,8 +404,27 @@ dengan akses hanya ke repo ini dan dua izin:
 Token ini **hanya dipakai di sisi server** (fungsi Vercel). Ia tidak pernah
 sampai ke browser.
 
-**3. Deploy.** Impor repo itu di Vercel. Tidak ada build step dan tidak ada
-framework — biarkan setelan bawaannya.
+**3. Deploy.** Impor repo itu di Vercel. **Setel "Framework Preset" ke
+`Other`.** Ini bukan langkah kosmetik — kalau dibiarkan `Flask`, deploy-nya
+**gagal** dengan pesan yang menyesatkan:
+
+```
+Error: No Flask entrypoint found in default locations, but found potential
+entrypoints: api/add.py (variable: handler) ...
+```
+
+Pesan itu menyalahkan berkas Anda, padahal berkasnya sudah benar. Yang salah
+adalah preset: **preset framework mengalahkan fungsi berbasis berkas**, jadi
+Vercel berhenti mencari `api/*.py` dan mulai mencari entrypoint Flask yang
+memang tidak ada. Setel ke `Other`, dan tiap `.py` di `api/` kembali menjadi
+fungsi tersendiri.
+
+Kalau proyeknya sudah telanjur dibuat dengan preset Flask, ubah di
+**Settings → Build and Development Settings → Framework Preset → Other**, lalu
+deploy ulang. Tidak perlu mengubah kode sama sekali.
+
+Tidak ada build step dan tidak ada dependensi — seluruh aplikasi hanya memakai
+pustaka standar Python.
 
 **4. Environment Variables** (Settings → Environment Variables):
 
@@ -528,8 +547,7 @@ riwayat.
 | `run.log` | Log runtime (dibuat otomatis) |
 | `vlib.py` | Utilitas bersama fungsi Vercel: GitHub API, bentuk balasan, pembatas laju |
 | `api/*.py` | Satu berkas per endpoint Vercel |
-| `vercel.json` | Konfigurasi Vercel — tanpa build step, tanpa framework |
-| `requirements.txt` | Sengaja kosong: hanya pustaka standar |
+| `vercel.json` | Konfigurasi Vercel: durasi maksimum tiap fungsi |
 | `.github/workflows/poll.yml` | Pengganti `poll_loop` di Vercel — jalan tiap 5 menit |
 | `.github/workflows/heartbeat.yml` | Commit kosong mingguan, asuransi agar workflow terjadwal tidak dimatikan |
 | `.github/workflows/probe.yml` | Diagnosis sekali jalan: apakah Cloudflare menerima runner GitHub |

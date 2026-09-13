@@ -11,3 +11,5 @@ __pycache__/
 # Sampah editor / OS
 .DS_Store
 *.swp
+.vercel
+.env*
