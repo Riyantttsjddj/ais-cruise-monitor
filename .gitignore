@@ -1,0 +1,13 @@
+# Data runtime — dibuat ulang sendiri oleh skrip.
+# Di branch `data` berkas-berkas ini memang disimpan; di branch ini tidak.
+state.json
+data.json
+run.log
+
+# Sampah Python
+__pycache__/
+*.pyc
+
+# Sampah editor / OS
+.DS_Store
+*.swp

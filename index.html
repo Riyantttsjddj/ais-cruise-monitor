@@ -1,0 +1,1191 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>⚓ Lacak Kapal — Live AIS</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --bg:#070d16;
+    --panel:rgba(12,20,33,.82);
+    --panel-solid:#0c1421;
+    --line:rgba(120,170,220,.16);
+    --ink:#e8f2ff;
+    --ink-dim:#8aa4c0;
+    --accent:#3ddc97;
+    --accent-2:#38bdf8;
+    --warn:#fbbf24;
+    --bad:#f87171;
+    --radius:14px;
+    --shadow:0 18px 44px rgba(0,0,0,.55);
+    font-synthesis-weight:none;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg);color:var(--ink);overflow:hidden;
+    font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+
+  #map{position:absolute;inset:0;background:#0a1220;z-index:0}
+  .leaflet-container{background:#0a1220;font:inherit}
+  .leaflet-control-attribution{
+    background:rgba(7,13,22,.72)!important;color:#7f9ab8!important;font-size:10px!important;
+    backdrop-filter:blur(6px)
+  }
+  .leaflet-control-attribution a{color:#9db8d6!important}
+  .leaflet-bar a{
+    background:var(--panel-solid)!important;color:var(--ink)!important;border-color:var(--line)!important
+  }
+  .leaflet-bar a:hover{background:#132135!important}
+
+  /* ---------------------------------------------------------------- topbar */
+  #topbar{
+    position:absolute;top:0;left:0;right:0;z-index:600;
+    display:flex;align-items:center;gap:12px;
+    padding:12px 16px;pointer-events:none;
+  }
+  #topbar > *{pointer-events:auto}
+  .brand{
+    display:flex;align-items:center;gap:10px;
+    padding:9px 14px;border-radius:var(--radius);
+    background:var(--panel);border:1px solid var(--line);
+    backdrop-filter:blur(14px);box-shadow:var(--shadow);
+    font-weight:650;letter-spacing:.2px;white-space:nowrap;
+  }
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);
+    box-shadow:0 0 0 4px rgba(61,220,151,.16)}
+  .brand small{color:var(--ink-dim);font-weight:500}
+
+  .pill{
+    display:flex;align-items:center;gap:8px;
+    padding:9px 14px;border-radius:999px;font-size:12.5px;font-weight:600;
+    background:var(--panel);border:1px solid var(--line);backdrop-filter:blur(14px);
+    box-shadow:var(--shadow);white-space:nowrap;
+  }
+  .pill .led{width:8px;height:8px;border-radius:50%;background:var(--ink-dim)}
+  .pill.online .led{background:var(--accent);animation:pulse 2s infinite}
+  .pill.offline .led{background:var(--bad)}
+  .pill.connecting .led{background:var(--warn);animation:pulse 1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  #spacer{flex:1}
+
+  /* ---------------------------------------------------------------- panel */
+  #panel{
+    position:absolute;top:70px;left:16px;z-index:550;width:330px;max-height:calc(100% - 96px);
+    display:flex;flex-direction:column;overflow:hidden;
+    background:var(--panel);border:1px solid var(--line);border-radius:18px;
+    backdrop-filter:blur(16px);box-shadow:var(--shadow);
+  }
+  #panel.collapsed .panel-body{display:none}
+  .panel-body{overflow-y:auto;padding:0 16px 16px}
+  .panel-body::-webkit-scrollbar{width:8px}
+  .panel-body::-webkit-scrollbar-thumb{background:rgba(120,170,220,.2);border-radius:8px}
+
+  .ship-head{padding:16px 16px 12px;border-bottom:1px solid var(--line);position:relative}
+  .ship-name{font-size:16px;font-weight:700;letter-spacing:.3px;line-height:1.2}
+  .ship-sub{color:var(--ink-dim);font-size:12px;margin-top:4px}
+  #panel-collapse{
+    position:absolute;top:14px;right:14px;width:26px;height:26px;border-radius:8px;cursor:pointer;
+    background:rgba(120,170,220,.1);border:1px solid var(--line);color:var(--ink-dim);
+    font-size:13px;line-height:1;display:grid;place-items:center
+  }
+  #panel-collapse:hover{background:rgba(120,170,220,.2);color:var(--ink)}
+
+  .hero{display:flex;align-items:center;gap:14px;padding:16px 0 14px}
+  .speed{flex:1}
+  .speed .big{font-size:40px;font-weight:700;line-height:1;letter-spacing:-1px}
+  .speed .unit{font-size:14px;color:var(--ink-dim);margin-left:5px;font-weight:600}
+  .speed .sub{color:var(--ink-dim);font-size:12px;margin-top:5px}
+  .rose{width:74px;height:74px;flex:none}
+  .rose .ring{fill:rgba(120,170,220,.05);stroke:var(--line);stroke-width:2}
+  .rose .tick{stroke:rgba(150,190,225,.35);stroke-width:2;stroke-linecap:round}
+  .rose .needle{fill:var(--accent-2)}
+  .rose .needle-tail{fill:rgba(150,190,225,.35)}
+  .rose text{fill:var(--ink-dim);font-size:11px;text-anchor:middle;font-weight:700}
+
+  /* Daftar data kapal = satu kartu utuh: border penuh + sudut membulat.
+     Sebelumnya tiap baris berlatar OPAK (#0c1421) bersudut siku tanpa padding
+     samping, di dalam panel yang semi-transparan dan membulat. Tepi atas/bawah
+     kena garis, tepi kiri/kanan tidak — jadi blok warnanya terlihat terpotong.
+     Sekarang latarnya tipis transparan supaya menyatu dengan panel. */
+  .rows{
+    display:flex;flex-direction:column;
+    background:rgba(120,170,220,.045);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden
+  }
+  .row{
+    display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+    padding:9px 12px;background:transparent;cursor:pointer;
+    border-top:1px solid var(--line)
+  }
+  .row:first-child{border-top:0}
+  .row:hover{background:rgba(120,170,220,.08)}
+  .row .k{color:var(--ink-dim);font-size:12px;flex:none}
+  .row .v{text-align:right;font-size:12.5px;font-weight:600;word-break:break-word}
+  .chip{
+    display:inline-block;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:650;
+    background:rgba(61,220,151,.14);color:var(--accent);border:1px solid rgba(61,220,151,.25)
+  }
+  .chip.muted{background:rgba(120,170,220,.1);color:var(--ink-dim);border-color:var(--line)}
+
+  .section-title{
+    font-size:11px;text-transform:uppercase;letter-spacing:1.3px;color:var(--ink-dim);
+    margin:16px 0 8px;font-weight:700
+  }
+  .links{display:flex;flex-wrap:wrap;gap:7px}
+  .links a{
+    flex:1 1 auto;text-align:center;text-decoration:none;color:var(--ink);
+    padding:8px 10px;border-radius:10px;font-size:12px;font-weight:600;
+    background:rgba(120,170,220,.09);border:1px solid var(--line)
+  }
+  .links a:hover{background:rgba(120,170,220,.2)}
+
+  /* ----------------------------------------------------------- daftar kapal */
+  .fleet{display:flex;flex-direction:column;gap:6px}
+  .fleet-item{
+    display:flex;align-items:center;gap:10px;padding:8px 10px;cursor:pointer;
+    background:rgba(120,170,220,.05);border:1px solid var(--line);border-radius:10px
+  }
+  .fleet-item:hover{background:rgba(120,170,220,.11)}
+  .fleet-item.active{border-color:var(--accent);background:rgba(61,220,151,.1)}
+  .fleet-main{flex:1;min-width:0}
+  .fleet-name{
+    font-size:12.5px;font-weight:650;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+  }
+  .fleet-sub{
+    font-size:11px;color:var(--ink-dim);margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+  }
+  .fleet-x{
+    flex:none;width:26px;height:26px;line-height:24px;text-align:center;
+    border-radius:8px;color:var(--ink-dim);font-size:15px;cursor:pointer
+  }
+  .fleet-x:hover{background:rgba(255,120,120,.18);color:#ff9a9a}
+  /* Konfirmasi dua-ketuk: menghapus kapal ikut menghapus jejaknya, jadi
+     salah sentuh tidak boleh langsung berdampak. */
+  .fleet-x[data-armed="1"]{
+    width:auto;padding:0 9px;font-size:11px;font-weight:650;
+    background:rgba(255,120,120,.2);color:#ff9a9a
+  }
+  #add-btn{width:100%;justify-content:center;margin-top:8px;text-align:center}
+
+  /* --------------------------------------------------------- tambah kapal */
+  #addbox{
+    position:fixed;inset:0;z-index:900;display:none;padding:20px;
+    align-items:center;justify-content:center;
+    background:rgba(4,10,16,.6);backdrop-filter:blur(3px)
+  }
+  #addbox.show{display:flex}
+  .addbox-card{
+    width:min(560px,100%);max-height:86vh;display:flex;flex-direction:column;
+    background:var(--panel-solid);border:1px solid var(--line);border-radius:16px;
+    box-shadow:0 18px 50px rgba(0,0,0,.55);overflow:hidden
+  }
+  .addbox-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:13px 16px;border-bottom:1px solid var(--line);font-size:14px
+  }
+  #addbox-close{
+    width:30px;height:30px;line-height:1;border:0;border-radius:8px;cursor:pointer;
+    background:none;color:var(--ink-dim);font-size:20px
+  }
+  #addbox-close:hover{background:rgba(120,170,220,.15);color:var(--ink)}
+  .addbox-body{padding:14px 16px 16px;overflow-y:auto}
+  .searchrow{display:flex;gap:8px}
+  .searchrow input{flex:1;min-width:0}
+  #addbox input{
+    width:100%;padding:10px 12px;font:inherit;font-size:13px;border-radius:9px;
+    background:rgba(8,16,24,.7);border:1px solid var(--line);color:var(--ink)
+  }
+  #addbox input:focus{outline:none;border-color:var(--accent)}
+  .hint{font-size:11.5px;color:var(--ink-dim);margin:9px 0}
+  #results{display:flex;flex-direction:column;gap:6px}
+  .result{
+    display:flex;align-items:center;gap:10px;padding:9px 11px;
+    background:rgba(120,170,220,.05);border:1px solid var(--line);border-radius:10px
+  }
+  .result-main{flex:1;min-width:0}
+  .result-name{
+    font-size:12.5px;font-weight:650;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+  }
+  .result-sub,.result-id{
+    font-size:11px;color:var(--ink-dim);margin-top:2px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis
+  }
+  .result-add{
+    flex:none;width:28px;height:28px;line-height:26px;text-align:center;
+    border-radius:9px;border:1px solid var(--accent);color:var(--accent);
+    font-size:16px;cursor:pointer
+  }
+  .result-add:hover{background:rgba(61,220,151,.16)}
+  .result-add.done{
+    width:auto;padding:0 10px;font-size:11px;cursor:default;
+    border-color:var(--line);color:var(--ink-dim)
+  }
+  .manual-toggle{
+    margin-top:14px;padding-top:12px;border-top:1px solid var(--line);
+    font-size:12px;color:var(--ink-dim);cursor:pointer;user-select:none
+  }
+  .manual-toggle:hover{color:var(--ink)}
+  .manual{display:none;flex-direction:column;gap:8px;margin-top:10px}
+  .manual.show{display:flex}
+
+  /* ---------------------------------------------------------------- kontrol */
+  #controls{
+    position:absolute;right:16px;bottom:96px;z-index:550;
+    display:flex;flex-direction:column;gap:8px;align-items:flex-end
+  }
+  .btnrow{display:flex;gap:8px}
+  .btn{
+    padding:9px 13px;border-radius:11px;cursor:pointer;font-size:12.5px;font-weight:650;
+    background:var(--panel);border:1px solid var(--line);color:var(--ink-dim);
+    backdrop-filter:blur(14px);box-shadow:var(--shadow);user-select:none;white-space:nowrap
+  }
+  .btn:hover{color:var(--ink)}
+  .btn.active{color:#06231a;background:var(--accent);border-color:var(--accent)}
+  .btn.small{padding:7px 10px;font-size:11.5px}
+
+  /* ---------------------------------------------------------------- banner */
+  #banner{
+    position:absolute;left:50%;transform:translateX(-50%);bottom:26px;z-index:580;
+    max-width:min(620px,calc(100% - 32px));display:none;
+    padding:12px 40px 12px 16px;border-radius:14px;font-size:12.5px;line-height:1.5;
+    background:rgba(60,42,6,.9);border:1px solid rgba(251,191,36,.4);color:#ffe6ad;
+    backdrop-filter:blur(14px);box-shadow:var(--shadow)
+  }
+  #banner.show{display:block}
+  #banner b{color:#fff}
+  #banner a{color:#ffe6ad}
+  #banner-close{
+    position:absolute;top:6px;right:8px;width:22px;height:22px;
+    display:flex;align-items:center;justify-content:center;
+    font:inherit;font-size:17px;line-height:1;cursor:pointer;
+    color:#ffe6ad;background:transparent;border:0;border-radius:6px;padding:0
+  }
+  #banner-close:hover{background:rgba(251,191,36,.18);color:#fff}
+
+  #toast{
+    position:absolute;left:50%;top:76px;transform:translate(-50%,-12px);z-index:700;
+    padding:9px 16px;border-radius:999px;font-size:12.5px;font-weight:600;
+    background:var(--panel-solid);border:1px solid var(--line);box-shadow:var(--shadow);
+    opacity:0;pointer-events:none;transition:opacity .2s, transform .2s
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+
+  /* ------------------------------------------------------------- penanda kapal */
+  .ship-icon{will-change:transform}
+  .ship-icon svg{display:block;filter:drop-shadow(0 3px 6px rgba(0,0,0,.6))}
+  .ship-halo{
+    position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;
+    border-radius:50%;border:2px solid var(--accent);opacity:0;
+  }
+  .halo-live .ship-halo{animation:halo 2.6s ease-out infinite}
+  @keyframes halo{
+    0%{transform:scale(.35);opacity:.85}
+    100%{transform:scale(1.25);opacity:0}
+  }
+
+  #err{
+    position:absolute;inset:0;z-index:900;display:none;place-items:center;padding:24px;
+    background:rgba(7,13,22,.94);text-align:center
+  }
+  #err.show{display:grid}
+  #err code{background:rgba(120,170,220,.12);padding:2px 6px;border-radius:6px}
+
+  /* ------------------------------------------------------- layar ponsel
+     Peta tetap jadi latar penuh. Panel berubah jadi "lembar bawah"
+     (bottom sheet) yang bisa dibuka-tutup, tombol pindah ke atas supaya
+     tidak pernah tertutup panel. */
+  :root{--sheet-h:72px}          /* tinggi panel saat tertutup */
+
+  @media (max-width:720px){
+    #topbar{padding:8px;gap:8px}
+    .brand{padding:8px 11px;font-size:13px}
+    .brand small{display:none}
+    #clock{display:none}
+    #conn{
+      font-size:11.5px;padding:8px 11px;
+      min-width:0;overflow:hidden;
+    }
+    #conn-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+    /* tombol di atas — panel bawah tidak akan pernah menutupinya.
+       Dibiarkan selebar baris dan rata KIRI supaya lurus dengan nama kapal
+       dan pil status di atasnya. */
+    #controls{
+      top:58px;right:8px;bottom:auto;left:8px;align-items:stretch
+    }
+    .btnrow{flex-wrap:wrap;justify-content:flex-start}
+    .btn{padding:9px 12px;font-size:12px}
+    .btn.small{padding:9px 11px;font-size:11.5px}
+
+    /* panel = lembar bawah, tertutup secara default (diatur lewat JS) */
+    #panel{
+      top:auto;bottom:8px;left:8px;right:8px;width:auto;
+      height:var(--sheet-h);max-height:none;overflow:hidden;
+      transition:height .25s ease;
+    }
+    #panel:not(.collapsed){height:min(64vh, calc(100% - 150px))}
+    .ship-head{padding:13px 48px 12px 15px;cursor:pointer}
+    /* dipangkas satu baris supaya tinggi panel-tertutup selalu pas 72px */
+    .ship-name,.ship-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .ship-name{font-size:15px}
+    #panel-collapse{top:auto;bottom:11px;right:12px;width:32px;height:32px;font-size:15px}
+    .panel-body{padding:0 15px 15px}
+    .speed .big{font-size:34px}
+    .row{padding:11px 12px}       /* sasaran sentuh lebih besar */
+
+    /* Catatan ditaruh di ATAS (di bawah tombol) supaya tidak pernah tertutup
+       lembar bawah; notifikasi tetap di bawah dekat aksi. Dua-duanya jadi
+       selalu terlihat dan tidak saling menimpa.
+       top:160px = batas bawah tombol walau melipat jadi dua baris (diukur
+       pada layar 320px), plus kelonggaran. max-height menjaga catatan panjang
+       tetap bisa digulir, bukan menutupi seluruh peta. */
+    #banner{
+      left:8px;right:8px;transform:none;max-width:none;
+      top:160px;bottom:auto;max-height:38vh;overflow-y:auto;
+      font-size:12px;padding:11px 38px 11px 14px
+    }
+    #toast{
+      top:auto;bottom:calc(var(--sheet-h) + 16px);
+      max-width:calc(100% - 24px);font-size:12px;text-align:center
+    }
+    #panel:not(.collapsed) ~ #toast{bottom:calc(min(64vh,100% - 150px) + 16px)}
+
+    /* Atribusi peta wajib tampil (syarat lisensi OSM/Esri) — diangkat supaya
+       tidak tertutup lembar bawah. Di ponsel zoom/scale sudah dibuang, jadi
+       sudut kanan-bawah hanya berisi atribusi. */
+    .leaflet-bottom.leaflet-right{bottom:calc(var(--sheet-h) + 8px)}
+    .leaflet-control-attribution{font-size:9px!important}
+
+    /* Kotak tambah kapal jadi lembar penuh, sejalan dengan pola #panel. */
+    #addbox{padding:0;align-items:flex-end}
+    .addbox-card{
+      width:100%;max-height:88vh;border-radius:16px 16px 0 0;border-bottom:0
+    }
+    .searchrow{flex-wrap:wrap}
+    .searchrow input{flex:1 1 100%}
+    #search-btn{flex:1 1 100%;text-align:center;justify-content:center;padding:11px}
+    .result,.fleet-item{padding:11px 12px}
+    .btn.small{padding:9px 12px}
+    #add-btn{padding:11px}
+  }
+
+  /* ponsel mendatar: beri ruang vertikal lebih untuk peta */
+  @media (max-width:720px) and (max-height:480px){
+    #panel:not(.collapsed){height:calc(100% - 120px)}
+    #panel:not(.collapsed) ~ #toast{bottom:calc(100% - 104px)}
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="topbar">
+  <div class="brand"><span class="dot" id="brand-dot"></span> Lacak Kapal <small>· sumber publik</small></div>
+  <div class="pill connecting" id="conn"><span class="led"></span><span id="conn-text">Memuat…</span></div>
+  <div id="spacer"></div>
+  <div class="pill mono" id="clock">--:--:--</div>
+</div>
+
+<aside id="panel">
+  <div class="ship-head">
+    <div class="ship-name" id="ship-name">Menunggu data…</div>
+    <div class="ship-sub" id="ship-sub">—</div>
+    <div id="panel-collapse" title="Sembunyikan panel">▾</div>
+  </div>
+  <div class="panel-body">
+    <div class="section-title">Kapal dilacak <span id="fleet-count"></span></div>
+    <div class="fleet" id="fleet"></div>
+    <div class="btn small" id="add-btn">➕ Tambah kapal</div>
+
+    <div class="hero">
+      <div class="speed">
+        <span class="big mono" id="sog">--</span><span class="unit">kn</span>
+        <div class="sub" id="sog-sub">kecepatan</div>
+      </div>
+      <svg class="rose" viewBox="0 0 100 100" aria-hidden="true">
+        <circle class="ring" cx="50" cy="50" r="44"/>
+        <line class="tick" x1="50" y1="8"  x2="50" y2="16"/>
+        <line class="tick" x1="92" y1="50" x2="84" y2="50"/>
+        <line class="tick" x1="50" y1="92" x2="50" y2="84"/>
+        <line class="tick" x1="8"  y1="50" x2="16" y2="50"/>
+        <text x="50" y="30">U</text><text x="72" y="54">T</text>
+        <text x="50" y="78">S</text><text x="28" y="54">B</text>
+        <g id="needle" transform="rotate(0 50 50)">
+          <path class="needle" d="M50 16 L57 50 L43 50 Z"/>
+          <path class="needle-tail" d="M50 84 L56 50 L44 50 Z"/>
+        </g>
+      </svg>
+    </div>
+
+    <div class="rows" id="rows"></div>
+
+    <div class="section-title">Sumber lain (citra satelit)</div>
+    <div class="links">
+      <a id="lnk-mt" target="_blank" rel="noopener">MarineTraffic</a>
+      <a id="lnk-vf" target="_blank" rel="noopener">VesselFinder</a>
+      <a id="lnk-cm" target="_blank" rel="noopener">CruiseMapper</a>
+    </div>
+  </div>
+</aside>
+
+<div id="controls">
+  <div class="btnrow">
+    <div class="btn small" id="layer-btn">🗺️ Peta</div>
+    <div class="btn small" id="refresh-btn">🔄 Cek</div>
+    <div class="btn small" id="follow-btn">🎯 Ikuti</div>
+    <div class="btn small" id="trail-btn">〰️ Jejak</div>
+    <div class="btn small" id="info-btn" title="Tampilkan lagi catatan keterlambatan data">ℹ️ Info</div>
+  </div>
+</div>
+
+<div id="banner"><div id="banner-text"></div><button id="banner-close" title="Sembunyikan catatan ini">×</button></div>
+
+<div id="addbox">
+  <div class="addbox-card">
+    <div class="addbox-head">
+      <b>Tambah kapal</b>
+      <button id="addbox-close" title="Tutup">×</button>
+    </div>
+    <div class="addbox-body">
+      <div class="searchrow">
+        <input id="q" type="search" placeholder="Nama kapal (min. 3 huruf)" autocomplete="off">
+        <div class="btn small" id="search-btn">Cari</div>
+      </div>
+      <div class="hint" id="search-msg">Ketik nama kapal, lalu tekan Cari.</div>
+      <div id="results"></div>
+
+      <div class="manual-toggle" id="manual-toggle">▸ Atau tambah manual (MMSI / IMO)</div>
+      <div class="manual" id="manual">
+        <input id="m-mmsi" inputmode="numeric" placeholder="MMSI (wajib, angka)">
+        <input id="m-imo" inputmode="numeric" placeholder="IMO (opsional, 7 digit)">
+        <input id="m-name" placeholder="Nama kapal (opsional)">
+        <div class="btn small" id="manual-btn">Tambahkan</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="err">
+  <div>
+    <h3 style="margin:0 0 8px">Peta gagal dimuat</h3>
+    <p style="color:var(--ink-dim);max-width:420px;margin:0 auto">
+      Library Leaflet dari CDN tidak bisa diakses — mesin ini butuh koneksi internet
+      untuk memuat peta. Data AIS di panel kiri tetap berjalan.
+    </p>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  if (!window.L) { document.getElementById("err").classList.add("show"); return; }
+
+  var STALE_SEC   = 6 * 3600;     // spanduk peringatan kalau data setua ini
+  var TRAIL_GAP_S = 12 * 3600;    // jeda yang memutus garis jejak
+  var TRAIL_MAX   = 6000;         // titik maksimum yang digambar
+
+  var LAYERS = {
+    "Peta": L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: "&copy; OpenStreetMap"
+    }),
+    "Satelit": L.tileLayer(
+      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      { maxZoom: 19, attribution: "Esri, Maxar, Earthstar Geographics" }
+    ),
+    "Gelap": L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      { maxZoom: 20, attribution: "&copy; OpenStreetMap &copy; CARTO", subdomains: "abcd" }
+    )
+  };
+  var layerNames = Object.keys(LAYERS);
+
+  var map = L.map("map", { zoomControl: false, attributionControl: true, worldCopyJump: true })
+             .setView([25.5, -78.5], 6);
+  LAYERS["Gelap"].addTo(map);
+
+  // Di ponsel tombol zoom/scale bawaan Leaflet dibuang: layarnya sempit dan
+  // pinch-to-zoom sudah tersedia, sedangkan tombolnya bertabrakan dengan
+  // tombol aplikasi. Dipasang ulang kalau jendela diperbesar.
+  function small(){ return window.matchMedia("(max-width:720px)").matches; }
+  var zoomCtl = null, scaleCtl = null;
+  function syncMapControls(){
+    var s = small();
+    if (s && zoomCtl){ map.removeControl(zoomCtl); zoomCtl = null; }
+    if (s && scaleCtl){ map.removeControl(scaleCtl); scaleCtl = null; }
+    if (!s && !zoomCtl) zoomCtl = L.control.zoom({ position: "bottomright" }).addTo(map);
+    if (!s && !scaleCtl) scaleCtl = L.control.scale({ imperial: false, position: "bottomleft" }).addTo(map);
+  }
+  syncMapControls();
+
+  // Panel dimulai tertutup di ponsel supaya peta langsung terlihat.
+  if (small()){
+    $("panel").classList.add("collapsed");
+    $("panel-collapse").textContent = "▸";
+  }
+
+  var trailLayer = L.layerGroup().addTo(map);
+  var marker = null, markerRot = null, haloEl = null;
+  var follow = true, showTrail = true;
+  var current = null;            // data kapal terpilih
+  var selectedMmsi = null;       // MMSI kapal yang sedang ditampilkan
+  var lastResults = [];          // hasil pencarian terakhir (untuk tombol +)
+  var trailCache = {};           // mmsi -> array titik
+  var anim = { lat: null, lon: null, hdg: 0 };
+  var target = { lat: null, lon: null, hdg: 0 };
+  var haveFix = false;
+
+  // ------------------------------------------------------------ ikon kapal
+  var SHIP_SVG =
+    '<svg viewBox="0 0 32 64" width="26" height="52">' +
+      '<path d="M16 2 L28 20 L28 50 L20 62 L12 62 L4 50 L4 20 Z" ' +
+            'fill="#3ddc97" stroke="#06231a" stroke-width="2" stroke-linejoin="round"/>' +
+      '<path d="M16 12 L21 24 L11 24 Z" fill="#06231a" opacity=".55"/>' +
+      '<rect x="11" y="30" width="10" height="12" rx="2" fill="#06231a" opacity=".45"/>' +
+    '</svg>';
+
+  function makeIcon() {
+    return L.divIcon({
+      className: "ship-icon halo-live",
+      html: '<div class="ship-halo"></div><div class="rot" style="transform-origin:50% 50%">' +
+            SHIP_SVG + "</div>",
+      iconSize: [26, 52],
+      iconAnchor: [13, 26]
+    });
+  }
+
+  // -------------------------------------------------------------- bantuan
+  function $(id) { return document.getElementById(id); }
+
+  function ago(sec) {
+    if (sec == null) return "—";
+    if (sec < 60) return sec + " detik lalu";
+    if (sec < 3600) return Math.floor(sec / 60) + " menit lalu";
+    if (sec < 86400) return Math.floor(sec / 3600) + " jam lalu";
+    return Math.floor(sec / 86400) + " hari lalu";
+  }
+
+  function toast(text) {
+    var t = $("toast");
+    t.textContent = text;
+    t.classList.add("show");
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.classList.remove("show"); }, 1800);
+  }
+
+  function row(key, value, cls) {
+    if (value == null || value === "") return "";
+    return '<div class="row"><span class="k">' + key + '</span>' +
+           '<span class="v ' + (cls || "") + '">' + value + "</span></div>";
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  function lerpAngle(a, b, t) {
+    var d = ((b - a + 540) % 360) - 180;
+    return a + d * t;
+  }
+
+  // ------------------------------------------------------------ panel kiri
+  function renderFleet(data) {
+    var ships = data.ships || [];
+    var max = (data.status && data.status.max_ships) || "?";
+    $("fleet-count").textContent = ships.length + " / " + max;
+
+    var html = "";
+    for (var i = 0; i < ships.length; i++) {
+      var sh = ships[i];
+      var sub = (sh.sog == null ? "kecepatan ?" : sh.sog.toFixed(1) + " kn") +
+                " · " + (sh.age == null ? "belum ada data" : ago(sh.age));
+      html += '<div class="fleet-item' +
+                (sh.mmsi === selectedMmsi ? " active" : "") +
+                '" data-mmsi="' + esc(sh.mmsi) + '">' +
+                '<div class="fleet-main">' +
+                  '<div class="fleet-name">' + esc(sh.label || sh.mmsi) + "</div>" +
+                  '<div class="fleet-sub">' + esc(sub) + "</div>" +
+                "</div>" +
+                '<div class="fleet-x" data-del="' + esc(sh.mmsi) +
+                  '" title="Berhenti melacak kapal ini">×</div>' +
+              "</div>";
+    }
+    $("fleet").innerHTML = html;
+  }
+
+  function selectShip(mmsi) {
+    if (mmsi === selectedMmsi) return;
+    selectedMmsi = mmsi;
+    haveFix = false;
+    anim.lat = null;
+    pullFull();
+  }
+
+  function renderPanel(s, ageSec) {
+    $("ship-name").textContent = s.label || s.name || s.mmsi;
+
+    var sub = [];
+    if (s.flag) sub.push(s.flag);
+    if (s.type) sub.push(s.type);
+    if (s.length) sub.push(Math.round(s.length) + " m");
+    $("ship-sub").textContent = sub.join(" · ") || "MMSI " + s.mmsi;
+
+    var sog = s.sog == null ? "--" : s.sog.toFixed(1);
+    $("sog").textContent = sog;
+    $("sog-sub").textContent = s.sog == null
+      ? "kecepatan tidak tersedia"
+      : (s.sog_kmh + " km/jam · " + (s.reported_human || ago(ageSec)));
+
+    var hdg = s.heading == null ? 0 : s.heading;
+    $("needle").setAttribute("transform", "rotate(" + hdg + " 50 50)");
+
+    var pos = (s.lat == null) ? null
+      : s.lat.toFixed(5) + ", " + s.lon.toFixed(5);
+
+    var html = "";
+    html += row("Posisi", pos ? '<span class="mono">' + pos + "</span>" : null);
+    html += row("Dilaporkan", s.reported ? esc(s.reported) +
+                (s.reported_human ? ' <span class="chip muted">' + esc(s.reported_human) + "</span>" : "")
+                : (s.reported_human ? esc(s.reported_human) : null));
+    html += row("Status", s.nav_status ? '<span class="chip">' + esc(s.nav_status) + "</span>" : null);
+    html += row("Haluan (COG)", s.cog == null ? null : Math.round(s.cog) + "°");
+    html += row("Tujuan", s.destination ? esc(s.destination) : null);
+    html += row("Perairan", s.area ? esc(s.area) : null);
+    html += row("Stasiun AIS", s.station ? esc(s.station) : null);
+    html += row("Sarat air", s.draught ? s.draught.toFixed(1) + " m" : null);
+    html += row("Jarak trip", s.trip_distance ? esc(s.trip_distance) : null);
+    html += row("Rata-rata / maks", (s.avg_speed || s.max_speed)
+      ? esc([s.avg_speed, s.max_speed].filter(Boolean).join(" / ")) : null);
+    html += row("Jarak terlacak", s.distance_nm ? s.distance_nm.toFixed(1) + " nm" : null);
+    html += row("MMSI", '<span class="mono">' + s.mmsi + "</span>");
+    html += row("IMO", s.imo ? '<span class="mono">' + s.imo + "</span>" : null);
+    html += row("Callsign", s.callsign ? '<span class="mono">' + esc(s.callsign) + "</span>" : null);
+    html += row("Dimensi", (s.length && s.beam)
+      ? Math.round(s.length) + " × " + Math.round(s.beam) + " m" : null);
+    html += row("Cuaca", s.weather && s.weather.temperature
+      ? esc([s.weather.temperature, s.weather.wind, s.weather.pressure]
+            .filter(Boolean).join(" · ")) : null);
+    html += row("Sumber", s.source ? esc(s.source) : null);
+
+    $("rows").innerHTML = html || '<div class="row"><span class="k">Belum ada data</span></div>';
+  }
+
+  // ---------------------------------------------------------------- jejak
+  function mergeTrail(mmsi, incoming, total) {
+    var cached = trailCache[mmsi];
+    if (!cached || total <= incoming.length) { trailCache[mmsi] = incoming.slice(); return; }
+    var lastTs = cached.length ? cached[cached.length - 1][2] : -1;
+    for (var i = 0; i < incoming.length; i++) {
+      if (incoming[i][2] > lastTs) cached.push(incoming[i]);
+    }
+    if (cached.length > 25000) cached.splice(0, cached.length - 25000);
+  }
+
+  function drawTrail() {
+    trailLayer.clearLayers();
+    if (!showTrail || !current) return;
+    var pts = trailCache[current.mmsi];
+    if (!pts || pts.length < 2) return;
+
+    var step = Math.max(1, Math.ceil(pts.length / TRAIL_MAX));
+    var segs = [], seg = [], prev = null;
+    for (var i = 0; i < pts.length; i += step) {
+      var p = pts[i];
+      if (prev && p[2] - prev[2] > TRAIL_GAP_S) { segs.push(seg); seg = []; }
+      seg.push([p[0], p[1]]);
+      prev = p;
+    }
+    if (seg.length) segs.push(seg);
+    if (prev && pts[pts.length - 1][2] - prev[2] > TRAIL_GAP_S) {
+      segs.push([[pts[pts.length - 1][0], pts[pts.length - 1][1]]]);
+    }
+
+    for (var k = 0; k < segs.length; k++) {
+      var isLatest = (k === segs.length - 1);
+      L.polyline(segs[k], {
+        color: isLatest ? "#3ddc97" : "#38bdf8",
+        weight: isLatest ? 3 : 2,
+        opacity: isLatest ? 0.95 : 0.35,
+        dashArray: isLatest ? null : "4 6",
+        lineJoin: "round",
+        interactive: false
+      }).addTo(trailLayer);
+    }
+  }
+
+  // -------------------------------------------------------------- animasi
+  function ensureMarker(s) {
+    if (!marker) {
+      marker = L.marker([s.lat, s.lon], { icon: makeIcon(), keyboard: false }).addTo(map);
+      markerRot = marker.getElement().querySelector(".rot");
+    }
+  }
+
+  function step() {
+    requestAnimationFrame(step);
+    if (target.lat == null) return;
+
+    if (anim.lat == null) {
+      anim.lat = target.lat; anim.lon = target.lon; anim.hdg = target.hdg;
+    } else {
+      // Lompatan besar = fix baru setelah jeda lama; jangan dianimasikan.
+      var jump = Math.abs(target.lat - anim.lat) + Math.abs(target.lon - anim.lon);
+      if (jump > 0.1) { anim.lat = target.lat; anim.lon = target.lon; }
+      anim.lat += (target.lat - anim.lat) * 0.09;
+      anim.lon += (target.lon - anim.lon) * 0.09;
+    }
+    anim.hdg = lerpAngle(anim.hdg, target.hdg, 0.12);
+
+    if (marker) {
+      marker.setLatLng([anim.lat, anim.lon]);
+      if (markerRot) markerRot.style.transform = "rotate(" + anim.hdg + "deg)";
+    }
+
+    if (follow && haveFix) {
+      var p = map.latLngToContainerPoint([anim.lat, anim.lon]);
+      var c = map.getSize().divideBy(2);
+      if (p.distanceTo(c) > 60) map.panTo([anim.lat, anim.lon], { animate: false });
+    }
+  }
+
+  // ------------------------------------------------------------- data masuk
+  function apply(data) {
+    // status pengambilan data
+    var st = data.status || {};
+    var pill = $("conn");
+    var state = st.state || "starting";
+    pill.className = "pill " + (state === "ok" ? "online" : state === "error" ? "offline" : "connecting");
+    var pace = st.interval == null ? ""
+      : (st.interval < 60 ? st.interval + " s" : Math.round(st.interval / 60) + " mnt");
+    $("conn-text").textContent =
+      state === "error" ? "Gagal mengambil data" :
+      state !== "ok" ? "Mengambil data…" :
+      small()
+        ? (st.source || "publik") + (pace ? " · " + pace : "")
+        : "Data " + (st.source || "publik") + " · " + (st.ships || 1) + " kapal · " +
+          (st.polls || 0) + "× cek" +
+          (pace ? " · tiap " + pace + (st.mode === "idle" ? " (sandar)" : "") : "");
+
+    if (!data.ships || !data.ships.length) return;
+
+    // Kapal yang ditampilkan: yang sedang dipilih, atau yang pertama kalau
+    // belum ada pilihan / kapal pilihannya sudah tidak dilacak lagi.
+    var s = null;
+    for (var i = 0; i < data.ships.length; i++) {
+      if (data.ships[i].mmsi === selectedMmsi) { s = data.ships[i]; break; }
+    }
+    if (!s) { s = data.ships[0]; selectedMmsi = s.mmsi; }
+
+    if (current && current.mmsi !== s.mmsi) {
+      // Peta harus melompat ke kapal yang baru dipilih, bukan meluncur dari
+      // posisi kapal sebelumnya. `haveFix = false` memakai jalur snap yang
+      // sudah ada di bawah.
+      haveFix = false;
+      anim.lat = null;
+    }
+
+    current = s;
+    // Dipakai penghitung umur berjalan di bawah; `age` dari server adalah
+    // angka tetap, jadi titik acuannya disimpan di sini.
+    current._ageAt = Date.now();
+    renderFleet(data);
+    mergeTrail(s.mmsi, s.trail || [], s.trail_total || 0);
+    renderPanel(s, s.age);
+
+    // tautan luar
+    $("lnk-mt").href = "https://www.marinetraffic.com/en/ais/details/ships/mmsi:" + s.mmsi;
+    $("lnk-vf").href = "https://www.vesselfinder.com/vessels/details/" + (s.imo || "");
+    $("lnk-cm").href = "https://www.cruisemapper.com/?imo=" + (s.imo || "");
+
+    // peta
+    if (s.lat != null && s.lon != null) {
+      ensureMarker(s);
+      target.lat = s.lat;
+      target.lon = s.lon;
+      target.hdg = s.heading == null ? (s.cog == null ? target.hdg : s.cog) : s.heading;
+      if (!haveFix) {
+        haveFix = true;
+        anim.lat = null;                       // paksa snap ke posisi pertama
+        map.setView([s.lat, s.lon], 11);
+      }
+      marker.getElement().classList.add("halo-live");
+    } else if (marker) {
+      marker.getElement().classList.remove("halo-live");
+    }
+
+    drawTrail();
+
+    // spanduk kalau datanya sudah lama
+    renderBanner(s);
+  }
+
+  // Catatan keterlambatan data. Bisa disembunyikan lewat tombol × dan
+  // dimunculkan lagi lewat tombol ℹ️ Info.
+  var bannerMuted = false;
+
+  function renderBanner(s) {
+    var banner = $("banner");
+    if (bannerMuted || !s || s.age == null || s.age <= STALE_SEC) {
+      banner.classList.remove("show");
+      return;
+    }
+    $("banner-text").innerHTML =
+      "<b>Posisi terakhir dilaporkan " + (s.reported ? esc(s.reported) : ago(s.age)) + "</b> (" +
+      (s.reported_human || ago(s.age)) + "). " +
+      "Skrip ini membaca halaman publik gratis, jadi pembaruannya tidak secepat GPS — " +
+      "saat kapal sandar, posisi baru bisa muncul beberapa jam sekali. " +
+      'Cek <a href="' + $("lnk-mt").href + '" target="_blank" rel="noopener">MarineTraffic</a> / ' +
+      '<a href="' + $("lnk-vf").href + '" target="_blank" rel="noopener">VesselFinder</a> untuk pembanding.';
+    banner.classList.add("show");
+  }
+
+  function pullFull() {
+    fetch("/api/state").then(function (r) { return r.json(); }).then(apply).catch(function () {});
+  }
+
+  // ------------------------------------------------------------------ SSE
+  var es = null;
+  function connect() {
+    if (es) es.close();
+    es = new EventSource("/api/stream");
+    es.onmessage = function (ev) {
+      var data;
+      try { data = JSON.parse(ev.data); } catch (e) { return; }
+      apply(data);
+      // Jejak di SSE dipotong; ambil versi penuh sekali kalau memang lebih panjang.
+      for (var i = 0; i < (data.ships || []).length; i++) {
+        var sh = data.ships[i];
+        if ((sh.trail_total || 0) > (sh.trail || []).length &&
+            !(trailCache[sh.mmsi] && trailCache[sh.mmsi].length >= sh.trail_total)) {
+          pullFull();
+          break;
+        }
+      }
+    };
+    es.onerror = function () {
+      $("conn").className = "pill offline";
+      $("conn-text").textContent = "Menyambung ulang…";
+    };
+  }
+
+  // -------------------------------------------------------------- interaksi
+  function togglePanel() {
+    var p = $("panel");
+    p.classList.toggle("collapsed");
+    var tutup = p.classList.contains("collapsed");
+    var btn = $("panel-collapse");
+    btn.textContent = tutup ? "▸" : "▾";
+    btn.title = tutup ? "Buka detail kapal" : "Sembunyikan detail";
+  }
+
+  $("panel-collapse").onclick = togglePanel;
+
+  // Di ponsel, ketuk kepala panel untuk buka/tutup — sasaran sentuhnya jauh
+  // lebih besar daripada tombol panah kecil.
+  $("panel").querySelector(".ship-head").addEventListener("click", function (ev) {
+    if (!small() || ev.target.id === "panel-collapse") return;
+    togglePanel();
+  });
+
+  $("follow-btn").onclick = function () {
+    follow = !follow;
+    this.classList.toggle("active", follow);
+    if (follow && current && current.lat != null) map.panTo([current.lat, current.lon]);
+  };
+  $("follow-btn").classList.add("active");
+
+  $("trail-btn").onclick = function () {
+    showTrail = !showTrail;
+    this.classList.toggle("active", showTrail);
+    drawTrail();
+  };
+  $("trail-btn").classList.add("active");
+
+  var layerIdx = 2;                       // mulai dari "Gelap"
+  $("layer-btn").onclick = function () {
+    map.removeLayer(LAYERS[layerNames[layerIdx]]);
+    layerIdx = (layerIdx + 1) % layerNames.length;
+    LAYERS[layerNames[layerIdx]].addTo(map);
+    this.textContent = ["🗺️", "🛰️", "🌙"][layerIdx] + " " + layerNames[layerIdx];
+  };
+  $("layer-btn").textContent = "🌙 Gelap";
+
+  // Tombol polling manual: paksa cek ke sumber sekarang, lalu laporkan apakah
+  // ada laporan posisi baru — supaya jelas bedanya "sudah dicek" dan "ada data baru".
+  var refreshBusy = false;
+
+  $("refresh-btn").onclick = function () {
+    if (refreshBusy) return;
+    refreshBusy = true;
+    var b = this;
+    var before = current ? current.reported : null;
+    b.textContent = "⏳ Mencari…";
+    fetch("/api/refresh", { method: "GET" })
+      .then(function () {
+        return new Promise(function (ok) { setTimeout(ok, 3500); });
+      })
+      .then(function () { return fetch("/api/state"); })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        apply(d);
+        // Laporkan keadaan kapal yang sedang ditampilkan, bukan selalu yang
+        // pertama di daftar.
+        var s = null;
+        for (var i = 0; i < (d.ships || []).length; i++) {
+          if (d.ships[i].mmsi === selectedMmsi) { s = d.ships[i]; break; }
+        }
+        s = s || (d.ships || [])[0];
+        if (!s) { toast("Sumber tidak mengembalikan data"); return; }
+        if (s.reported && s.reported !== before) {
+          toast("Laporan baru: " + s.reported);
+        } else {
+          toast("Sudah dicek — kapal belum kirim laporan baru (" +
+                (s.reported || "waktu tidak diketahui") + ")");
+        }
+      })
+      .catch(function () { toast("Gagal memeriksa sumber"); })
+      .then(function () { refreshBusy = false; b.textContent = "🔄 Cek"; });
+  };
+
+  $("banner-close").onclick = function () {
+    bannerMuted = true;
+    $("banner").classList.remove("show");
+    toast("Catatan disembunyikan — tekan ℹ️ Info untuk melihat lagi");
+  };
+
+  $("info-btn").onclick = function () {
+    bannerMuted = false;
+    renderBanner(current);
+    if (!$("banner").classList.contains("show")) {
+      toast(current ? "Data masih segar — tidak ada catatan" : "Menunggu data…");
+    }
+  };
+
+  // ------------------------------------------------- daftar kapal: interaksi
+  $("fleet").addEventListener("click", function (e) {
+    var x = e.target.closest("[data-del]");
+    if (x) {
+      var mmsi = x.getAttribute("data-del");
+      // Konfirmasi dua-ketuk: menghapus kapal juga menghapus jejak lintasannya,
+      // jadi satu salah sentuh tidak boleh langsung berdampak.
+      if (x.getAttribute("data-armed") !== "1") {
+        x.setAttribute("data-armed", "1");
+        x.textContent = "Yakin?";
+        setTimeout(function () {
+          if (!x.getAttribute("data-armed")) return;
+          x.removeAttribute("data-armed");
+          x.textContent = "×";
+        }, 3000);
+        return;
+      }
+      x.removeAttribute("data-armed");
+      x.textContent = "…";
+      fetch("/api/remove?mmsi=" + encodeURIComponent(mmsi))
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { toast(d.error || "Gagal menghapus"); x.textContent = "×"; return; }
+          delete trailCache[mmsi];
+          if (selectedMmsi === mmsi) {
+            selectedMmsi = null;      // apply() akan jatuh ke kapal pertama
+            haveFix = false;
+            anim.lat = null;
+          }
+          toast("Berhenti melacak " + mmsi);
+          pullFull();
+        })
+        .catch(function () { toast("Gagal menghapus kapal"); x.textContent = "×"; });
+      return;
+    }
+    var item = e.target.closest(".fleet-item");
+    if (item && item.getAttribute("data-mmsi")) {
+      selectShip(item.getAttribute("data-mmsi"));
+    }
+  });
+
+  // ------------------------------------------------------ kotak tambah kapal
+  function openAdd() {
+    $("addbox").classList.add("show");
+    $("q").focus();
+  }
+  function closeAdd() { $("addbox").classList.remove("show"); }
+
+  $("add-btn").onclick = openAdd;
+  $("addbox-close").onclick = closeAdd;
+  $("addbox").addEventListener("click", function (e) {
+    if (e.target === $("addbox")) closeAdd();   // klik di luar kartu
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && $("addbox").classList.contains("show")) closeAdd();
+  });
+  $("manual-toggle").onclick = function () {
+    var buka = $("manual").classList.toggle("show");
+    this.textContent = (buka ? "▾" : "▸") + " Atau tambah manual (MMSI / IMO)";
+  };
+
+  function addShip(qs, label, done) {
+    fetch("/api/add?" + qs)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) { toast(d.error || "Gagal menambahkan"); done(false); return; }
+        // Langsung tampilkan kapal barunya, jangan tunggu putaran berikutnya.
+        selectedMmsi = d.mmsi;
+        haveFix = false;
+        anim.lat = null;
+        toast("Mulai melacak " + (label || d.mmsi));
+        pullFull();
+        done(true);
+      })
+      .catch(function () { toast("Gagal menambahkan kapal"); done(false); });
+  }
+
+  var searchBusy = false;
+  function doSearch() {
+    var q = $("q").value.trim();
+    $("results").innerHTML = "";
+    lastResults = [];
+    if (q.length < 3) {
+      $("search-msg").textContent = "Ketik minimal 3 huruf.";
+      return;
+    }
+    if (searchBusy) return;
+    searchBusy = true;
+    $("search-msg").textContent = "Mencari…";
+    fetch("/api/search?q=" + encodeURIComponent(q))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.error) { $("search-msg").textContent = d.error; return; }
+        var rs = d.results || [];
+        lastResults = rs;
+        if (!rs.length) {
+          $("search-msg").textContent = 'Tidak ada kapal bernama "' + q + '".';
+          return;
+        }
+        $("search-msg").textContent = rs.length + " hasil — tekan + untuk melacak.";
+        var html = "";
+        for (var i = 0; i < rs.length; i++) {
+          var r = rs[i];
+          var sub = [r.flag, r.type, r.area, r.speed].filter(Boolean).join(" · ");
+          html += '<div class="result"><div class="result-main">' +
+            '<div class="result-name">' + esc(r.name) + "</div>" +
+            '<div class="result-sub">' + esc(sub) + "</div>" +
+            '<div class="result-id mono">MMSI ' + esc(r.mmsi) +
+              (r.imo ? " · IMO " + esc(r.imo) : "") + "</div></div>" +
+            (r.tracked
+              ? '<div class="result-add done">dilacak</div>'
+              : '<div class="result-add" data-add="' + esc(r.mmsi) + '">+</div>') +
+            "</div>";
+        }
+        $("results").innerHTML = html;
+      })
+      .catch(function () { $("search-msg").textContent = "Pencarian gagal — coba lagi."; })
+      .then(function () { searchBusy = false; });
+  }
+
+  $("search-btn").onclick = doSearch;
+  $("q").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") doSearch();
+  });
+
+  $("results").addEventListener("click", function (e) {
+    var b = e.target.closest("[data-add]");
+    if (!b) return;
+    var mmsi = b.getAttribute("data-add");
+    // Data lengkap diambil dari hasil yang sedang tampil supaya name/imo/url
+    // ikut tersimpan ke ships.json. `url` itulah yang membuat urutan slug
+    // tidak perlu ditebak lagi saat skrip dijalankan ulang.
+    var r = null;
+    for (var i = 0; i < lastResults.length; i++) {
+      if (lastResults[i].mmsi === mmsi) { r = lastResults[i]; break; }
+    }
+    if (!r) return;
+    b.textContent = "…";
+    addShip("mmsi=" + encodeURIComponent(r.mmsi) +
+            "&name=" + encodeURIComponent(r.name) +
+            "&imo=" + encodeURIComponent(r.imo || "") +
+            "&url=" + encodeURIComponent(r.url || ""),
+            r.name, function (ok) {
+      b.textContent = ok ? "dilacak" : "+";
+      if (ok) b.className = "result-add done";
+    });
+  });
+
+  $("manual-btn").onclick = function () {
+    var mmsi = $("m-mmsi").value.trim();
+    if (!/^\d+$/.test(mmsi)) { toast("MMSI harus berupa angka"); return; }
+    var nama = $("m-name").value.trim();
+    var b = this;
+    b.textContent = "…";
+    addShip("mmsi=" + encodeURIComponent(mmsi) +
+            "&imo=" + encodeURIComponent($("m-imo").value.trim()) +
+            "&name=" + encodeURIComponent(nama.toUpperCase()),
+            nama || mmsi, function (ok) {
+      b.textContent = "Tambahkan";
+      if (ok) {
+        $("m-mmsi").value = "";
+        $("m-imo").value = "";
+        $("m-name").value = "";
+      }
+    });
+  };
+
+  map.on("dragstart", function () {
+    if (!follow) return;
+    follow = false;
+    $("follow-btn").classList.remove("active");
+  });
+
+  // klik baris posisi = salin koordinat
+  $("rows").addEventListener("click", function (e) {
+    var r = e.target.closest(".row");
+    if (!r || !current || current.lat == null) return;
+    var txt = current.lat.toFixed(5) + ", " + current.lon.toFixed(5);
+    navigator.clipboard.writeText(txt).then(function () {
+      toast("Koordinat disalin: " + txt);
+    }).catch(function () {});
+  });
+
+  // jam + umur sinyal (memakai jam server, bukan jam browser)
+  setInterval(function () {
+    var d = new Date();
+    $("clock").textContent = d.toTimeString().slice(0, 8) + " lokal";
+    // `age` dari server adalah angka tetap pada saat snapshot diambil, jadi
+    // umur yang berjalan dihitung dari situ ditambah waktu sejak diterima.
+    if (current && current.age != null) {
+      var umur = current.age + (Date.now() - (current._ageAt || Date.now())) / 1000;
+      $("sog-sub").textContent = current.sog == null
+        ? "kecepatan tidak tersedia · " + ago(Math.round(umur))
+        : (current.sog_kmh + " km/jam · " + ago(Math.round(umur)));
+    }
+  }, 1000);
+
+  requestAnimationFrame(step);
+  pullFull();
+  connect();
+
+  // Saat layar berubah ukuran / ponsel diputar: pasang ulang kontrol peta dan
+  // gambar ulang pil status (teksnya beda untuk layar sempit). Diredam supaya
+  // tidak memicu puluhan permintaan selama animasi putar layar.
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    syncMapControls();
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(pullFull, 250);
+  });
+})();
+</script>
+</body>
+</html>
