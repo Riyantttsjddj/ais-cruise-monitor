@@ -11,6 +11,10 @@ python3 tracker.py
 
 Lalu buka **http://127.0.0.1:8777** di browser.
 
+Bisa juga dijalankan di Vercel sebagai situs publik. Itu **bukan** pemindahan
+yang setara — ada yang hilang, dan bagian "Menjalankan di Vercel" di bawah
+menyebutkannya terus terang sebelum Anda memutuskan.
+
 ---
 
 ## Penting dibaca dulu: data ini bukan GPS real-time
@@ -27,7 +31,7 @@ tidak ada API key, tidak ada langganan. Konsekuensinya:
 - **Bisa rusak sewaktu-waktu.** Kalau situs sumber mengubah struktur HTML-nya,
   parser akan gagal. Skrip akan melaporkan error di panel status, bukan
   diam-diam menampilkan data lama — tapi perbaikannya harus manual
-  (lihat "Kalau parser rusak" di bawah).
+  (lihat "Kalau parser rusak (versi lokal)" di bawah).
 - **Halaman `?mmsi=` tidak dipakai.** Halaman itu tidak memuat koordinat sama
   sekali. Skrip menyusun URL slug dari nama kapal:
   `/vessels/wonder-of-the-seas-imo-9838345-mmsi-311001033`.
@@ -181,6 +185,10 @@ dihapus. Kapal yang dihapus lewat antarmuka akan hilang dari berkas ini.
 
 ## Cara kerjanya
 
+Bagian ini menjelaskan **versi lokal**. Di versi Vercel, langkah 1 dan 6 diganti
+oleh GitHub Actions dan polling — parser, sumber, dan penggabungan lintasan di
+langkah 2–5 tetap sama persis, karena kodenya memang sama.
+
 1. `poll_loop()` mengelilingi daftar kapal, satu permintaan per kapal per
    putaran. Tiap kapal dicoba pada sumber berurutan dan berhenti di sumber
    pertama yang berhasil: **MyShipTracking** lalu **CruiseMapper** (cadangan).
@@ -204,22 +212,34 @@ dihapus. Kapal yang dihapus lewat antarmuka akan hilang dari berkas ini.
 
 ### Endpoint
 
-| Endpoint | Fungsi |
-|---|---|
-| `/` | Halaman peta |
-| `/api/state` | Snapshot JSON semua kapal |
-| `/api/stream` | SSE, dorong snapshot saat berubah |
-| `/api/refresh` | Paksa polling sekarang (tombol 🔄 Cek) |
-| `/api/search?q=…` | Cari kapal di MyShipTracking; 400 kalau kata kunci < 3 huruf |
-| `/api/add?mmsi=…&name=…&imo=…&url=…` | Tambah kapal; 409 kalau MMSI duplikat, bukan angka, atau batas tercapai |
-| `/api/remove?mmsi=…` | Hapus kapal; 409 kalau tidak sedang dilacak atau itu kapal terakhir |
+Semua endpoint ini ada di **kedua** versi dengan nama yang sama. Yang berbeda
+hanya siapa yang mengerjakannya:
 
-`/api/add` dan `/api/remove` menulis balik `ships.json` supaya perubahannya
-bertahan setelah restart.
+| Endpoint | Lokal | Vercel |
+|---|---|---|
+| `/` | Halaman peta | Halaman peta |
+| `/api/state` | Snapshot JSON semua kapal | — (diganti `data.json` di branch `data`) |
+| `/api/stream` | SSE, dorong snapshot saat berubah | — (diganti polling 30 detik) |
+| `/api/refresh` | Paksa polling **sekarang** | **Minta** GitHub menjalankan poller |
+| `/api/search?q=…` | Cari di MyShipTracking; 400 kalau kata kunci < 3 huruf | sama |
+| `/api/add?mmsi=…&name=…&imo=…&url=…` | Tambah kapal; 409 kalau MMSI duplikat, bukan angka, atau batas tercapai | sama, tapi menulis lewat commit |
+| `/api/remove?mmsi=…` | Hapus kapal; 409 kalau tidak sedang dilacak atau itu kapal terakhir | sama, tapi menulis lewat commit |
+| `/api/probe` | — | Diagnosis setelah deploy |
 
-Satu catatan jujur soal `/api/search`: ia memakai `Fetcher` yang sama dengan
-polling, dan throttle menahan lock selama jeda 5 detik. Jadi menekan **Cari**
-bisa menunda satu putaran polling hingga ~5 detik. Tidak berbahaya, tapi nyata.
+Kode status dan bentuk balasannya sengaja dibuat identik di kedua versi, jadi
+UI-nya tidak perlu tahu sedang bicara dengan yang mana.
+
+Di versi lokal, `/api/add` dan `/api/remove` menulis balik `ships.json` supaya
+perubahannya bertahan setelah restart. Di versi Vercel, keduanya meng-commit
+`ships.json` ke repo — jadi perubahannya justru tercatat di riwayat git.
+
+Satu catatan jujur soal `/api/search`: di versi lokal ia memakai `Fetcher` yang
+sama dengan polling, dan throttle menahan lock selama jeda 5 detik. Jadi menekan
+**Cari** bisa menunda satu putaran polling hingga ~5 detik. Tidak berbahaya,
+tapi nyata. Di versi Vercel tidak ada polling yang berjalan di proses yang sama,
+jadi efek itu tidak ada — sebagai gantinya pencarian dibatasi 12 permintaan per
+menit per IP, supaya tidak ada yang bisa memakai situs Anda untuk membombardir
+MyShipTracking.
 
 ### Tombol di antarmuka
 
@@ -308,7 +328,172 @@ menyimpulkan sesuatu yang presisi.
 
 ---
 
-## Kalau parser rusak
+## Menjalankan di Vercel
+
+Bagian ini menjelaskan versi publiknya. Kalau Anda hanya memakai versi lokal,
+lewati saja — tidak ada yang berubah di sana.
+
+### Apa yang hilang, sebelum Anda memutuskan
+
+Vercel Hobby tidak bisa menjalankan aplikasi ini apa adanya. Batasnya bukan
+soal selera, ini angka dari dokumentasi mereka:
+
+| | Vercel Hobby | Yang dibutuhkan aplikasi ini |
+|---|---|---|
+| Interval cron | **minimum 1× sehari** | 6 detik |
+| Proses latar belakang | tidak ada | `poll_loop` sebagai thread abadi |
+| Berkas yang bertahan | tidak ada | `state.json` |
+| Durasi maksimum fungsi | 300 detik | SSE terbuka tanpa batas |
+
+Selisihnya lima orde besaran, jadi ini **bukan** cara membuat versi lokal
+berjalan di Vercel — ini arsitektur yang berbeda, dengan kemunduran nyata:
+
+| | Lokal | Vercel |
+|---|---|---|
+| Pembaruan posisi | **6 detik** (300 saat sandar) | **5 menit**, tidak adaptif |
+| Cara browser menerima data | SSE, didorong saat berubah | polling tiap 30 detik |
+| Tombol 🔄 Cek | mengecek saat itu juga (~3 detik) | **meminta**, lalu menunggu ~20–60 detik |
+| Jejak lintasan | tersimpan di komputer Anda | tersimpan di repo, publik |
+| Tambah/hapus kapal | tulis ke `ships.json` lokal | commit ke repo, perlu token |
+| Butuh akun | tidak | GitHub + Vercel |
+
+Hiburannya: data dari situs sumbernya sendiri tertinggal berjam-jam (pernah
+terukur `age` ≈ 7 jam). Selisih 6 detik dan 5 menit praktis tidak terasa di
+atas data yang umurnya beberapa jam. Yang benar-benar terasa adalah tombol
+🔄 Cek, yang tidak lagi instan.
+
+### Arsitekturnya
+
+```
+GitHub Actions                     Vercel
+┌──────────────────────┐          ┌────────────────────────┐
+│ poll.yml tiap 5 mnt  │          │ index.html (statis)    │
+│  tracker.py --once   │          │                        │
+│         ↓            │          │ api/search  api/add    │
+│  branch `data`  ─────┼── dibaca │ api/remove  api/refresh│
+│  data.json           │    oleh  │        ↓               │
+│  state.json          │          │  GitHub Contents API   │
+└──────────────────────┘          │  → commit ships.json   │
+                                  └────────────────────────┘
+```
+
+Yang penting: **`data.json` bentuknya sama persis dengan `/api/state`**. Itu
+disengaja, supaya `apply()` di `index.html` tidak perlu tahu bedanya.
+
+Branch `data` selalu berisi **tepat satu commit** (di-force-push tiap kali),
+jadi repo tidak membengkak oleh 288 commit sehari. Branch itu hanya berisi
+data, tidak ada kode.
+
+### Langkah-langkahnya
+
+**1. Repo.** Kode ini sudah ada di
+`https://github.com/Riyantttsjddj/ais-cruise-monitor`. Kalau Anda memakai repo
+Anda sendiri, **ubah satu baris di `index.html`** — cari `URL_JAUH` di dekat
+komentar "sumber data" dan ganti pemilik/nama reponya. Kalau tidak diubah,
+halaman yang di-deploy akan membaca data dari repo ini, bukan repo Anda.
+
+**2. Token GitHub.** Buat *fine-grained token* di
+**Settings → Developer settings → Personal access tokens → Fine-grained**,
+dengan akses hanya ke repo ini dan dua izin:
+
+| Izin | Untuk apa |
+|---|---|
+| **Contents: Read and write** | meng-commit `ships.json` saat kapal ditambah/dihapus |
+| **Actions: Read and write** | memicu `poll.yml` saat tombol 🔄 Cek ditekan |
+
+Token ini **hanya dipakai di sisi server** (fungsi Vercel). Ia tidak pernah
+sampai ke browser.
+
+**3. Deploy.** Impor repo itu di Vercel. Tidak ada build step dan tidak ada
+framework — biarkan setelan bawaannya.
+
+**4. Environment Variables** (Settings → Environment Variables):
+
+| Nama | Isi |
+|---|---|
+| `GH_TOKEN` | token dari langkah 2 |
+| `GH_REPO` | `Riyantttsjddj/ais-cruise-monitor` (pemilik/nama) |
+
+Tanpa keduanya, halaman tetap tampil dan petanya tetap jalan — yang mati hanya
+tambah/hapus/🔄 Cek, dengan pesan yang menjelaskan penyebabnya.
+
+**5. Periksa.** Buka `https://<nama-anda>.vercel.app/api/probe`. Balasannya
+JSON dan memeriksa tiga hal yang tidak bisa dipastikan dari sini:
+
+```json
+{
+  "modul":  { "ok": true, "berkas": "tracker.py" },
+  "github": { "ok": true, "boleh_menulis": true },
+  "sumber": { "ok": true, "status": 200 },
+  "ringkas": "semua siap"
+}
+```
+
+| Bagian | Kalau `ok: false` |
+|---|---|
+| `modul` | `tracker.py` tidak ikut ter-bundle — laporkan, ini bug |
+| `github` | tokennya salah, kedaluwarsa, atau kurang izin |
+| `sumber` | Cloudflare menolak IP Vercel. Pencarian dari UI tidak akan jalan; peta tetap jalan karena datanya dari branch `data`, bukan dari Vercel |
+
+Balasan itu tidak pernah memuat isi token — hanya ada/tidak, panjangnya, dan
+awalan empat hurufnya.
+
+**6. Nyalakan poller-nya.** Buka tab **Actions** di repo, pilih workflow
+**poll**, tekan **Run workflow** sekali. Setelah itu ia jalan sendiri tiap 5
+menit.
+
+### Kenapa poller-nya di GitHub, bukan di Vercel
+
+Cron Vercel Hobby minimum **sekali sehari**, dan ekspresi yang lebih rapat
+**gagal saat deploy** — bukan diam-diam melambat, tapi ditolak. GitHub Actions
+memberi interval terpendek **5 menit** dan gratis tanpa batas untuk repo publik.
+
+Dua hal soal Actions yang perlu diketahui:
+
+- Jadwalnya **bisa tertunda saat beban tinggi**, terutama di awal jam. Karena
+  itu cronnya ditulis `2-57/5 * * * *`, bukan `*/5` — pola pertama tidak pernah
+  jatuh tepat di menit :00.
+- Workflow terjadwal di repo publik **dimatikan otomatis setelah 60 hari tanpa
+  aktivitas repo**. Karena `poll` mendorong ke branch `data` tiap 5 menit, itu
+  mestinya sudah cukup — tapi tidak jelas apakah dorongan dari `GITHUB_TOKEN`
+  dihitung sebagai "aktivitas". Karena itu ada `heartbeat.yml`: satu commit
+  kosong tiap Senin sebagai asuransi. Kalau ternyata tidak perlu, ia hanya
+  menambah 52 commit kosong setahun.
+
+### Kalau disalahgunakan
+
+Anda memilih **tanpa kunci**, jadi siapa pun yang menemukan alamatnya bisa
+menambah atau menghapus kapal. Itu keputusan yang sadar, dan yang menahan
+kerusakannya:
+
+| Penjaga | Yang dilakukan |
+|---|---|
+| **Batas 8 kapal** | penambahan ke-9 ditolak. Ini penjaga yang sebenarnya — tidak ada yang bisa membanjiri repo dengan ribuan kapal |
+| **Tanpa header CORS** | situs lain tidak bisa memanggil endpoint tulis dari browser pengunjungnya |
+| **Pembatas laju per-IP** | menahan tombol yang ditekan bertubi-tubi. **Best-effort saja** — disimpan di memori proses, dan Vercel bisa menjalankan beberapa instans lalu mematikannya kapan saja |
+| **Riwayat git** | tiap perubahan tercatat dan bisa dibalik |
+
+Risikonya polusi repo, bukan pencurian data: token Anda tidak pernah sampai ke
+browser, hanya dipakai di sisi server. Kalau nanti benar-benar disalahgunakan,
+urutannya: balikkan commitnya (`git revert`), lalu putar ulang tokennya di
+GitHub, lalu hapus deployment-nya di Vercel. Tidak ada kunci `ADMIN_KEY` di
+kode ini — kalau Anda ingin satu, itu perubahan yang perlu ditulis dulu.
+
+### Kalau parser rusak (versi Vercel)
+
+Log-nya ada di tab **Actions** → pilih run → langkah "Satu putaran polling".
+Kalau semua sumber gagal, langkah itu keluar dengan kode 1 dan run-nya ditandai
+gagal — jadi parser yang rusak terlihat, bukan lewat diam-diam berhari-hari.
+
+Satu penjaga khusus: jumlah titik jejak dicatat **sebelum** dan **sesudah**
+tiap run. `Store._merge_trail()` tidak pernah menghapus titik, jadi jejak yang
+**menyusut** selalu berarti `state.json` gagal dimuat dan run itu mulai dari
+nol. Kejadian itu pernah lolos karena workflow-nya tetap melaporkan sukses;
+sekarang ia menggagalkan run-nya dengan menyebut MMSI yang bermasalah.
+
+---
+
+## Kalau parser rusak (versi lokal)
 
 Gejalanya: panel status menampilkan error, atau field tertentu kosong.
 Cara mendiagnosis:
@@ -341,3 +526,13 @@ riwayat.
 | `ships.json` | Daftar kapal yang dilacak |
 | `state.json` | Jejak lintasan tersimpan (dibuat otomatis) |
 | `run.log` | Log runtime (dibuat otomatis) |
+| `vlib.py` | Utilitas bersama fungsi Vercel: GitHub API, bentuk balasan, pembatas laju |
+| `api/*.py` | Satu berkas per endpoint Vercel |
+| `vercel.json` | Konfigurasi Vercel — tanpa build step, tanpa framework |
+| `requirements.txt` | Sengaja kosong: hanya pustaka standar |
+| `.github/workflows/poll.yml` | Pengganti `poll_loop` di Vercel — jalan tiap 5 menit |
+| `.github/workflows/heartbeat.yml` | Commit kosong mingguan, asuransi agar workflow terjadwal tidak dimatikan |
+| `.github/workflows/probe.yml` | Diagnosis sekali jalan: apakah Cloudflare menerima runner GitHub |
+
+`state.json`, `data.json`, dan `run.log` ada di `.gitignore` — di branch `main`.
+Di branch `data` dua yang pertama justru memang disimpan; itulah gunanya.
