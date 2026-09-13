@@ -42,18 +42,79 @@ jobs:
         run: |
           # Tanpa ini, tiap run mulai dari nol dan jejak lintasan kapal hilang
           # setiap 5 menit. Branch `data` belum tentu ada pada run pertama.
+          #
+          # PERHATIAN: `origin/data:state.json` memakai TITIK DUA, itu sintaks
+          # git untuk mengambil berkas dari sebuah commit. Versi pertama langkah
+          # ini menulis garis miring (`origin/data/state.json`), yang bukan
+          # sintaks git — perintahnya gagal, `2>/dev/null` menelan pesannya, dan
+          # karena berada di dalam `if` kegagalannya tidak menggagalkan langkah.
+          # Akibatnya tiap run mulai dari nol: jejak lintasan OASIS menyusut
+          # dari 37 titik jadi 11, sementara workflow tetap melaporkan sukses.
           if git fetch origin data --depth=1 2>/dev/null; then
-            if git show origin/data/state.json > state.json 2>/dev/null; then
+            if git show origin/data:state.json > /tmp/lama.json 2>/dev/null \
+               && python3 -c "import json,sys; json.load(open('/tmp/lama.json'))" 2>/dev/null; then
+              mv /tmp/lama.json state.json
               echo "state.json diambil dari branch data ($(wc -c < state.json) byte)"
+              python3 -c "
+          import json
+          d = json.load(open('state.json'))
+          for m, s in d.get('ships', {}).items():
+              print(f'  {m}: {len(s.get(\"trail\", []))} titik lintasan')
+          "
             else
-              echo "branch data ada tapi belum punya state.json — mulai dari nol"
+              rm -f state.json /tmp/lama.json
+              echo "branch data ada tapi state.json tidak terbaca — mulai dari nol"
             fi
           else
             echo "branch data belum ada — run pertama, mulai dari nol"
           fi
 
       - name: Satu putaran polling
-        run: python3 tracker.py --once --data-out data.json
+        run: |
+          # Catat jumlah titik jejak SEBELUM, lalu bandingkan sesudahnya.
+          # Store._merge_trail() hanya pernah menambah titik (dengan batas
+          # 20000), jadi jejak yang MENYUSUT selalu berarti ada yang salah —
+          # biasanya state.json gagal dimuat sehingga run mulai dari nol.
+          # Bug itu pernah lolos karena workflow-nya tetap melaporkan sukses:
+          # yang membocorkannya cuma jumlah titik yang mengecil.
+          python3 - <<'PY' > /tmp/sebelum.txt
+          import json, os
+          if os.path.exists("state.json"):
+              d = json.load(open("state.json"))
+              for m, s in sorted(d.get("ships", {}).items()):
+                  print(f"{m} {len(s.get('trail', []))}")
+          PY
+
+          python3 tracker.py --once --data-out data.json
+
+          echo
+          echo "=== jejak lintasan: sebelum -> sesudah ==="
+          python3 - <<'PY'
+          import json, sys
+
+          sebelum = {}
+          for baris in open("/tmp/sebelum.txt"):
+              mmsi, n = baris.split()
+              sebelum[mmsi] = int(n)
+
+          d = json.load(open("state.json"))
+          mengecil = []
+          for m, s in sorted(d.get("ships", {}).items()):
+              a = sebelum.get(m, 0)
+              b = len(s.get("trail", []))
+              tanda = "  " if b >= a else "!!"
+              print(f"  {tanda} {m}: {a} -> {b}")
+              if b < a:
+                  mengecil.append(m)
+
+          if mengecil:
+              print()
+              print(f"GAGAL: jejak menyusut untuk {', '.join(mengecil)}. "
+                    f"Store._merge_trail() tidak pernah menghapus titik, jadi ini "
+                    f"berarti state.json dari branch data tidak termuat.")
+              sys.exit(1)
+          print("  tidak ada jejak yang menyusut.")
+          PY
 
       - name: Dorong hasilnya ke branch data
         env:
