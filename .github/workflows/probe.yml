@@ -1,0 +1,102 @@
+name: probe-sumber
+
+# Sekali jalan, manual saja. Gunanya menjawab satu pertanyaan yang menentukan
+# seluruh arsitektur: apakah Cloudflare di MyShipTracking menerima permintaan
+# dari IP runner GitHub? Kalau ditolak, poller di Actions tidak mungkin dipakai
+# dan rencananya harus diubah sebelum satu baris pun ditulis.
+#
+# Sengaja TIDAK terjadwal — ini alat diagnosis, bukan bagian dari alur normal.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Alamat IP runner (untuk catatan)
+        run: |
+          echo "IP publik runner:"
+          curl -s https://api.ipify.org || true
+          echo
+
+      - name: Uji halaman kapal lewat parser asli
+        run: |
+          python3 - <<'PY'
+          import sys, urllib.error, urllib.request
+          sys.path.insert(0, ".")
+          from tracker import Fetcher, USER_AGENT
+
+          url = ("https://www.myshiptracking.com/vessels/"
+                 "wonder-of-the-seas-imo-9838345-mmsi-311001033")
+
+          # Tanda-tanda yang HANYA ada di halaman sungguhan. Kalau Cloudflare
+          # menantang, kita dapat halaman challenge yang tidak memuat ini.
+          # Catatan: "canvas_map_generate" ada di dalam <script>, jadi harus
+          # dicek pada badan MENTAH — ia hilang kalau lewat strip_scripts().
+          # "table-filter" sengaja tidak dipakai: itu id tabel di halaman
+          # PENCARIAN, bukan di halaman kapal.
+          penanda = {
+              "canvas_map_generate": "panggilan peta (sumber koordinat)",
+              "myst-table":          "tabel riwayat",
+              "311001033":           "MMSI kapal itu sendiri",
+          }
+
+          try:
+              body, cached = Fetcher().get(url)
+          except urllib.error.HTTPError as exc:
+              print(f"GAGAL: HTTP {exc.code} {exc.reason}")
+              print("Header respons:")
+              for k, v in exc.headers.items():
+                  print(f"  {k}: {v}")
+              raise SystemExit(1)
+          except Exception as exc:
+              print(f"GAGAL: {type(exc).__name__}: {exc}")
+              raise SystemExit(1)
+
+          print(f"OK: {len(body)} byte diterima (dari cache: {cached})")
+          print(f"User-Agent: {USER_AGENT[:60]}...")
+          print()
+          for token, arti in penanda.items():
+              ada = token in body
+              print(f"  {'ADA   ' if ada else 'HILANG'} {token:22} — {arti}")
+
+          hilang = [t for t in penanda if t not in body]
+          if hilang:
+              print()
+              print("Halaman diterima TAPI isinya bukan yang kita harapkan.")
+              print("200 byte pertama:")
+              print(body[:200])
+              raise SystemExit(1)
+          print()
+          print("Parser bisa membaca halaman ini dari runner GitHub.")
+          PY
+
+      - name: Uji halaman pencarian
+        run: |
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, ".")
+          from tracker import Fetcher, search_vessels
+
+          try:
+              hasil = search_vessels(Fetcher(), "wonder of the seas")
+          except Exception as exc:
+              print(f"GAGAL: {type(exc).__name__}: {exc}")
+              raise SystemExit(1)
+
+          print(f"OK: {len(hasil)} hasil")
+          for r in hasil[:3]:
+              print(f"  {r['name']} | MMSI {r['mmsi']} | IMO {r['imo']}")
+          if not hasil:
+              raise SystemExit(1)
+          PY
+
+      - name: Uji cadangan CruiseMapper
+        run: |
+          curl -s -o /dev/null \
+            -w "CruiseMapper: status=%{http_code} ukuran=%{size_download}\n" \
+            -A "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36" \
+            "https://www.cruisemapper.com/ships/Wonder-Of-The-Seas-1421" || true
