@@ -898,6 +898,58 @@ def choose_interval(store: Store, fast: float, idle: float,
     return (fast, "fast") if moving else (idle, "idle")
 
 
+def run_once(store: Store, fetcher: Fetcher, data_out: Path | None = None) -> int:
+    """Satu putaran penuh lalu selesai — dipakai mode `--once`.
+
+    Ini pengganti `poll_loop` saat skrip dijalankan sebagai pekerjaan terjadwal
+    (GitHub Actions), di mana tidak ada proses yang hidup terus dan tidak ada
+    HTTP server. Semua logika pengambilan data tetap milik `poll_once()`, jadi
+    tidak ada dua implementasi yang bisa berbeda diam-diam.
+
+    Kode keluarnya berarti: 0 kalau minimal satu kapal berhasil diperbarui,
+    1 kalau semuanya gagal. Workflow memakai ini untuk menandai run gagal —
+    tanpa itu, parser yang rusak akan lewat tanpa terlihat selama berhari-hari.
+    """
+    try:
+        poll_once(store, fetcher)
+    except Exception as exc:
+        print(f"[sekali] error tak terduga: {exc}", file=sys.stderr)
+        return 1
+
+    store.save()
+
+    if data_out is not None:
+        # Bentuknya diambil dari Store.snapshot() — jalur yang sama persis
+        # dengan yang dilayani /api/state — supaya berkas statis ini dan
+        # endpoint itu tidak pernah bisa menyimpang satu sama lain.
+        tmp = data_out.with_suffix(".tmp")
+        try:
+            tmp.write_text(json.dumps(store.snapshot()))
+            tmp.replace(data_out)
+        except OSError as exc:
+            print(f"[sekali] gagal menulis {data_out}: {exc}", file=sys.stderr)
+            return 1
+
+    with store.lock:
+        ok = store.status["state"] == "ok"
+        err = store.status["error"]
+        ships = list(store.ships.values())
+
+    for s in ships:
+        if s.lat is None:
+            # Ship tidak menyimpan pesan error per-kapal; alasannya terkumpul di
+            # store.status["error"] dan sudah dicetak di bawah kalau semuanya gagal.
+            print(f"  {s.label or s.mmsi}: belum ada posisi")
+        else:
+            print(f"  {s.label or s.mmsi}: {s.lat:.5f}, {s.lon:.5f} · "
+                  f"{s.sog if s.sog is not None else '?'} kn · dilaporkan {s.reported or '?'}")
+
+    if not ok:
+        print(f"[sekali] semua sumber gagal: {err}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def poll_loop(store: Store, fetcher: Fetcher, fast: float, idle: float,
               idle_speed: float, stop: threading.Event,
               wake: threading.Event | None = None):
@@ -1129,6 +1181,13 @@ def main():
                         "hanya mengizinkan satu permintaan per 5 detik")
     p.add_argument("--ships", default=str(HERE / "ships.json"))
     p.add_argument("--state", default=str(HERE / "state.json"))
+    p.add_argument("--once", action="store_true",
+                   help="jalankan SATU putaran lalu keluar, tanpa HTTP server. "
+                        "Dipakai pekerjaan terjadwal (GitHub Actions), di mana "
+                        "tidak ada proses yang hidup terus")
+    p.add_argument("--data-out", default="",
+                   help="bersama --once: tulis snapshot JSON ke berkas ini. "
+                        "Bentuknya sama persis dengan /api/state")
     args = p.parse_args()
 
     cfg_path = Path(args.ships)
@@ -1139,6 +1198,14 @@ def main():
               f"dilacak, tapi penambahan baru akan ditolak.", file=sys.stderr)
     fetcher = Fetcher()
     store.fetcher = fetcher
+
+    if args.once:
+        # Mode pekerjaan terjadwal: tidak ada server, tidak ada loop. Keluar
+        # dengan kode yang bisa dibaca workflow.
+        for s in store.ships.values():
+            print(f"[kapal] {s.label or s.mmsi}  MMSI {s.mmsi}  IMO {s.imo or '-'}")
+        sys.exit(run_once(store, fetcher,
+                          Path(args.data_out) if args.data_out else None))
 
     Handler.store = store
     Handler.config_path = cfg_path
