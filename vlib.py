@@ -129,8 +129,11 @@ def _gh(method: str, path: str, payload: dict | None = None) -> dict:
             "Lihat bagian \"Pasang di Vercel\" di README.", 500)
 
     data = json.dumps(payload).encode() if payload is not None else None
+    # `path` kosong harus menghasilkan URL TANPA garis miring di ujung:
+    # GitHub membalas 404 untuk `/repos/<pemilik>/<repo>/`, bukan 200.
+    url = f"https://api.github.com/repos/{repo}" + (f"/{path}" if path else "")
     req = urllib.request.Request(
-        f"https://api.github.com/repos/{repo}/{path}",
+        url,
         data=data, method=method,
         headers={
             "Authorization": f"Bearer {token}",
