@@ -30,9 +30,14 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -q --allow-empty -m "heartbeat: menjaga workflow terjadwal tetap aktif
 
-Commit kosong, tidak mengubah berkas apa pun. GitHub mematikan workflow
-terjadwal di repo publik setelah 60 hari tanpa aktivitas."
+          # Dua -m, bukan satu -m berisi baris kosong: pesan multi-baris di
+          # dalam blok `run: |` harus ikut ter-indentasi, dan kalau tidak,
+          # barisnya mengakhiri blok scalar itu dan YAML-nya jadi tidak valid.
+          # Itu pernah terjadi di sini dan membuat workflow ini ditolak GitHub.
+          git commit -q --allow-empty \
+            -m "heartbeat: menjaga workflow terjadwal tetap aktif" \
+            -m "Commit kosong, tidak mengubah berkas apa pun. GitHub mematikan workflow terjadwal di repo publik setelah 60 hari tanpa aktivitas."
+
           git push -q origin HEAD:main
           echo "heartbeat terkirim: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
