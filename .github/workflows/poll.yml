@@ -1,0 +1,83 @@
+name: poll
+
+# Pengganti `poll_loop` dari versi lokal.
+#
+# Di Vercel tidak ada proses yang hidup terus, dan cron Vercel Hobby hanya boleh
+# sekali sehari (ekspresi yang lebih rapat GAGAL saat deploy). GitHub Actions
+# memberi interval terpendek 5 menit dan gratis tanpa batas untuk repo publik,
+# jadi poller-nya dijalankan di sini dan hasilnya dititipkan ke branch `data`.
+#
+# Hasilnya: pembaruan tiap 5 menit, bukan 6 detik. Itu memang kemunduran, tapi
+# data dari situs sumbernya sendiri tertinggal berjam-jam, jadi dalam praktiknya
+# hampir tidak terasa. Versi lokal tetap 6 detik.
+
+on:
+  schedule:
+    # Sengaja digeser dari menit :00. GitHub mendokumentasikan bahwa jadwal
+    # bisa tertunda saat beban tinggi, "terutama di awal jam". `*/5` selalu
+    # melewati menit 0; pola 2-57/5 tidak.
+    - cron: "2-57/5 * * * *"
+  workflow_dispatch:      # tombol "minta pembaruan" di UI memanggil ini
+
+# Dua jalan yang tumpang tindih akan punya objek Fetcher masing-masing, dan
+# throttle 5 detik milik Fetcher hidup di dalam proses — jadi keduanya TIDAK
+# saling koordinasi dan bisa menabrak situs sumber bersamaan. Ini yang
+# mencegahnya.
+concurrency:
+  group: poll
+  cancel-in-progress: false
+
+permissions:
+  contents: write         # untuk mendorong branch `data`
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ambil state.json dari branch data (supaya jejak lintasan bersambung)
+        run: |
+          # Tanpa ini, tiap run mulai dari nol dan jejak lintasan kapal hilang
+          # setiap 5 menit. Branch `data` belum tentu ada pada run pertama.
+          if git fetch origin data --depth=1 2>/dev/null; then
+            if git show origin/data/state.json > state.json 2>/dev/null; then
+              echo "state.json diambil dari branch data ($(wc -c < state.json) byte)"
+            else
+              echo "branch data ada tapi belum punya state.json — mulai dari nol"
+            fi
+          else
+            echo "branch data belum ada — run pertama, mulai dari nol"
+          fi
+
+      - name: Satu putaran polling
+        run: python3 tracker.py --once --data-out data.json
+
+      - name: Dorong hasilnya ke branch data
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          mkdir -p /tmp/databranch
+          cd /tmp/databranch
+          git init -q -b data
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          cp "$GITHUB_WORKSPACE/data.json" "$GITHUB_WORKSPACE/state.json" .
+
+          # Ukuran diperiksa supaya kegagalan parser tidak diam-diam menulis
+          # berkas kosong ke branch yang dibaca situs.
+          echo "data.json: $(wc -c < data.json) byte"
+
+          git add -A
+          git commit -q -m "data: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git remote add origin \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # Force-push disengaja: branch ini selalu tepat satu commit, jadi repo
+          # tidak membengkak oleh 288 commit per hari. Branch ini hanya berisi
+          # data, tidak ada kode, jadi tidak ada yang bisa hilang karenanya.
+          git push --force -q origin data
+          echo "selesai: $(git log --oneline -1)"

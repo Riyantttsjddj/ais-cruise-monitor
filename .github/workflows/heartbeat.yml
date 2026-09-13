@@ -1,0 +1,38 @@
+name: heartbeat
+
+# GitHub mematikan workflow terjadwal di repo publik setelah 60 hari tanpa
+# aktivitas repo. Workflow `poll` mendorong ke branch `data` tiap 5 menit, dan
+# mestinya itu sudah cukup — tapi dorongan yang dibuat dengan GITHUB_TOKEN
+# tidak memicu workflow lain, dan tidak jelas apakah ia dihitung sebagai
+# "aktivitas" untuk aturan 60 hari ini.
+#
+# Commit kosong mingguan ini asuransinya. Kalau `poll` ternyata sudah cukup,
+# workflow ini tidak melakukan apa-apa selain satu commit kosong per minggu.
+# Kalau tidak cukup, ini yang menjaga poller tetap hidup.
+
+on:
+  schedule:
+    # Senin 04:23 UTC — sengaja bukan menit :00, mengikuti saran GitHub untuk
+    # menghindari penundaan saat beban tinggi di awal jam.
+    - cron: "23 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Commit kosong penanda aktivitas
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -q --allow-empty -m "heartbeat: menjaga workflow terjadwal tetap aktif
+
+Commit kosong, tidak mengubah berkas apa pun. GitHub mematikan workflow
+terjadwal di repo publik setelah 60 hari tanpa aktivitas."
+          git push -q origin HEAD:main
+          echo "heartbeat terkirim: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
