@@ -21,10 +21,21 @@
   sisa proyeknya — yang membaca kode ini Anda, bukan pengunjung.
 
   Nama kelas lama (`digit`, `isi`, `salah`, `galat`, `terbuka`, id `kode`/
-  `buka`/`pesan`) SENGAJA dibiarkan apa adanya. Itu kontrak yang diuji 82 kasus
+  `buka`/`pesan`) SENGAJA dibiarkan apa adanya. Itu kontrak yang diuji 126 kasus
   di /tmp/uji_kunci_html.js; menggantinya demi kerapian penamaan berarti
-  mempertaruhkan 82 uji yang sedang lulus untuk keuntungan yang tidak dilihat
+  mempertaruhkan 126 uji yang sedang lulus untuk keuntungan yang tidak dilihat
   siapa pun. Unsur BARU memakai nama Inggris.
+
+  Tiga perilaku yang ditetapkan pengguna (14 Sep 2026) dan mudah "diperbaiki"
+  orang lain tanpa sadar:
+
+    * Angka yang diketik disamarkan SEKETIKA — tidak ada jendela perlihat
+      sesaat. Umpan baliknya cuma sorot fokus yang pindah ke kotak berikutnya.
+    * Kotak keenam terisi TIDAK mengirim apa pun. Yang mengirim hanya tindakan
+      yang disengaja: tombolnya, atau Enter. Menempel kode lengkap juga tidak.
+    * Tirai 15 detiknya TIDAK BISA DILEWATI. Tidak ada pendengar klik maupun
+      tombol untuk itu; satu-satunya jalan keluar adalah `t.akhir` di TAHAP,
+      plus `prefers-reduced-motion` yang memang pengaturan sistem pengguna.
 
   Satu aturan yang dipegang seluruh teks di halaman ini: TIDAK ADA angka yang
   dikarang lalu dipajang seolah hasil pengukuran. Yang ditampilkan sebagai angka
@@ -386,9 +397,7 @@
     width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none;
     box-shadow:0 0 8px var(--accent);animation:denyut 1.4s ease-in-out infinite;
   }
-  .tirai-kop .kanan,.tirai-kaki .kanan{margin-left:auto;color:var(--ink-faint)}
-  .tirai-kaki .kanan{transition:opacity .4s;opacity:0}
-  .tirai-kaki .kanan.hidup{opacity:1}
+  .tirai-kop .kanan{margin-left:auto;color:var(--ink-faint)}
   .tirai-isi{
     position:relative;z-index:1;align-self:center;
     width:min(560px,100%);margin:0 auto;
@@ -482,10 +491,6 @@
   }
   .kunci-bidik.hidup::after{opacity:1}
 
-  .lewati{
-    font:600 10px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
-    color:var(--ink-faint);
-  }
   @keyframes masuk{from{opacity:0}to{opacity:1}}
   @keyframes cap-masuk{
     from{opacity:0;transform:scale(1.35);filter:blur(9px)}
@@ -666,7 +671,6 @@
     /* Tirai 15 detiknya sendiri tidak diputar sama sekali (lihat jalankanTirai),
        tapi kalau ia sempat tampil sedetik, bidiknya jangan tertinggal terbuka. */
     .kunci-bidik span{transform:translate(var(--dx),var(--dy)) scale(1.55);opacity:1}
-    .tirai-kaki .kanan{opacity:1}
     *{transition-duration:.01ms !important}
   }
 </style>
@@ -785,7 +789,6 @@
 
     <div class="tirai-kaki">
       <span class="num" id="tirai-jam">T+00.0</span>
-      <span class="kanan" id="lewati">Press any key to skip</span>
     </div>
   </div>
   <div class="kilat" id="kilat" aria-hidden="true"></div>
@@ -816,9 +819,6 @@
   var N     = butir.length;
   var sedang = false;
 
-  // Berapa lama kode yang baru diketik masih terlihat sebelum jadi titik.
-  var SINGKAP = 650;
-
   function kode() {
     var s = "";
     for (var i = 0; i < N; i++) s += butir[i].value;
@@ -832,15 +832,7 @@
   }
 
   function bersihkan() {
-    for (var i = 0; i < N; i++) {
-      butir[i].value = "";
-      // Timer singkapnya ikut dimatikan. Kalau tidak, timer lama masih menyala
-      // dan mencabut topeng kotak yang sudah dikosongkan — hasilnya satu kotak
-      // kosong yang tiba-tiba berkedip.
-      var sel = butir[i].parentNode;
-      clearTimeout(sel._t);
-      sel.classList.remove("buka");
-    }
+    for (var i = 0; i < N; i++) butir[i].value = "";
     dokumenter();
     grup.classList.remove("salah");
     butir[0].focus();
@@ -848,27 +840,17 @@
 
   // Menyembunyikan angka yang sudah diketik. Dipanggil dari SATU tempat saja
   // supaya keadaan topeng tidak pernah bisa berbeda dari isi kotaknya.
+  //
+  // Topengnya menutup SEKETIKA, tanpa jendela "diperlihatkan sebentar". Yang
+  // mengetik tetap punya umpan balik bahwa ketukannya masuk — sorot fokusnya
+  // pindah ke kotak berikutnya — dan itu cukup.
   function dokumenter() {
     for (var i = 0; i < N; i++) {
       var el = butir[i], sel = el.parentNode;
       var ada = el.value !== "";
-      // Baru saja terisi -> perlihatkan sebentar. Urutannya penting: `isi`
-      // diperiksa SEBELUM di-toggle, kalau tidak setiap pemanggilan berikutnya
-      // dianggap pengisian baru dan topengnya tidak pernah menutup.
-      if (ada && !el.classList.contains("isi")) singkap(sel);
       el.classList.toggle("isi", ada);
-      if (!ada) { clearTimeout(sel._t); sel.classList.remove("buka"); }
-      sel.classList.toggle("topeng", ada && !sel.classList.contains("buka"));
+      sel.classList.toggle("topeng", ada);
     }
-  }
-
-  function singkap(sel) {
-    sel.classList.add("buka");
-    clearTimeout(sel._t);
-    sel._t = setTimeout(function () {
-      sel.classList.remove("buka");
-      dokumenter();
-    }, SINGKAP);
   }
 
   // Hanya angka. Menyaring di sini, bukan di `maxlength` saja, karena
@@ -1008,9 +990,10 @@
         grup.classList.remove("salah");
 
         if (el.value && i < N - 1) fokusKe(i + 1);
-        // Begitu kotak terakhir terisi, langsung kirim. Ini yang membuat
-        // halamannya terasa seperti terminal, bukan seperti formulir.
-        if (kode().length === N) kirim();
+        // Kotak keenam terisi TIDAK mengirim apa pun. Yang mengirim cuma
+        // tindakan yang disengaja: menekan tombolnya, atau menekan Enter.
+        // Mengirim sendiri begitu kotak terakhir terisi berarti kode dikirim
+        // sebelum yang mengetik sempat memeriksanya.
       });
 
       el.addEventListener("keydown", function (ev) {
@@ -1045,7 +1028,8 @@
     dokumenter();
     var akhir = Math.min(mulai + teks.length, N - 1);
     fokusKe(akhir);
-    if (kode().length === N) kirim();
+    // Menempel kode lengkap juga tidak langsung mengirim — menempel bukan
+    // tindakan yang menyatakan "kode ini benar". Tombolnya tetap yang menentukan.
   }
 
   // ==================================================== TIRAI SUKSES (15 dtk)
@@ -1089,7 +1073,6 @@
   var jalur   = document.getElementById("jalur");
   var gelombang = document.getElementById("gelombang");
   var bidik   = document.getElementById("bidik");
-  var lewati  = document.getElementById("lewati");
   var kilat   = document.getElementById("kilat");
   var tiraiJam = document.getElementById("tirai-jam");
   var daftarFase = document.getElementById("fase").children;
@@ -1141,21 +1124,16 @@
     location.replace("/");
   }
 
-  function lewatiTirai() {
-    if (!tirai.classList.contains("tampil")) return;
-    tiraiTutup();
-    kePeta();
-  }
-
   function jalankanTirai() {
     tirai.classList.add("tampil");
     logS.innerHTML = "";
     barisLog = [];
     jalur.classList.remove("hidup");
     bidik.classList.remove("hidup");
-    lewati.classList.remove("hidup");
     // Dalam mode gerak-diminta-berhenti, seluruh 15 detiknya dilompati. Yang
     // meminta animasi berhenti tidak boleh malah dipaksa menonton 15 detik.
+    // Ini SATU-SATUNYA jalan pintas yang tersisa, dan ia bukan tombol lewati:
+    // ia pengaturan sistem yang dipilih sendiri oleh pengguna perangkatnya.
     if (diam) { tiraiTutup(); kePeta(); return; }
 
     // Penghitung waktu sejak tirai terbuka. Angka ini NYATA — ia mengukur
@@ -1179,34 +1157,20 @@
           if (t.jalur) jalur.classList.add("hidup");
           if (t.bidik) bidik.classList.add("hidup");
           if (t.kilat) kilat.classList.add("hidup");
-          if (t.akhir) kePeta();
+          // Dulu `lewatiTirai()` yang menutup tirainya; sejak lewatinya dibuang,
+          // tidak ada lagi yang melakukannya di jalur ini — dan penghitung
+          // waktunya (interval 100 ms) ikut terus menyala sesudah `kePeta()`.
+          // Ditutup di sini supaya tirainya benar-benar berakhir, bukan cuma
+          // ditinggalkan oleh navigasi.
+          if (t.akhir) { tiraiTutup(); kePeta(); }
         }, t.at));
       })(TAHAP[k]);
     }
-    // Petunjuk lewatinya baru muncul setelah beberapa detik: kalau muncul
-    // sejak detik nol, yang pertama terbaca justru "cara keluar dari ini".
-    pewaktu.push(setTimeout(function () { lewati.classList.add("hidup"); }, 3000));
   }
 
-  // Lewati: klik di mana saja, atau tombol apa pun. Ini ditambahkan justru
-  // karena 15 detik itu lama — dan yang membukanya berulang kali akan
-  // memakainya setiap kali.
-  //
-  // Kombinasi dengan Ctrl/Cmd/Alt SENGAJA tidak ikut dimakan: menekan Ctrl+R
-  // di tengah animasi harus tetap memuat ulang halaman, bukan malah melompati
-  // animasinya.
-  function tombolMurni(ev) { return !ev.ctrlKey && !ev.metaKey && !ev.altKey; }
-
-  tirai.addEventListener("click", lewatiTirai);
-  document.addEventListener("click", function () {
-    if (tirai.classList.contains("tampil")) lewatiTirai();
-  });
-  document.addEventListener("keydown", function (ev) {
-    if (tirai.classList.contains("tampil") && tombolMurni(ev)) {
-      ev.preventDefault();
-      lewatiTirai();
-    }
-  });
+  // Tirai sukses SENGAJA tidak bisa dilewati — itu permintaan pengguna
+  // (14 Sep 2026). Tidak ada pendengar klik maupun tombol di sini; satu-satunya
+  // jalan keluar adalah `t.akhir` di daftar TAHAP.
 
   // ==================================================== TIRAI GAGAL
   var alarm    = document.getElementById("alarm");
@@ -1233,6 +1197,10 @@
   }
 
   alarm.addEventListener("click", alarmTutup);
+  // Kombinasi dengan Ctrl/Cmd/Alt SENGAJA tidak ikut dimakan: menekan Ctrl+R
+  // saat alarmnya terbuka harus tetap memuat ulang halaman, bukan sekadar
+  // menutup alarmnya.
+  function tombolMurni(ev) { return !ev.ctrlKey && !ev.metaKey && !ev.altKey; }
   document.addEventListener("keydown", function (ev) {
     if (alarm.classList.contains("tampil") && tombolMurni(ev)) {
       ev.preventDefault();
@@ -1316,7 +1284,7 @@
   // tidak punya rahasia di sisi peramban — gerbangnya ada di cookie dan
   // middleware — jadi membuka ini tidak melemahkan apa pun.
   window.__gerbang = {
-    lama: LAMA, tahap: TAHAP, mulai: jalankanTirai, lewati: lewatiTirai,
+    lama: LAMA, tahap: TAHAP, mulai: jalankanTirai,
     percobaan: function () { return percobaan; }
   };
 })();

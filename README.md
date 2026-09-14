@@ -717,22 +717,34 @@ halaman tanpa kode; middleware hanya ada di Vercel. Ini disengaja supaya
 pekerjaan di mesin sendiri tidak terganggu.
 
 **Tampilan `kunci.html`.** Antarmukanya berbahasa Inggris (komentarnya tetap
-Indonesia). Tiga perilakunya sengaja, dan ketiganya punya uji sendiri:
+Indonesia). Empat perilakunya sengaja, dan keempatnya punya uji sendiri:
 
-- **Kode yang diketik disamarkan.** Tiap kotak punya `<label class="sel">` dengan
-  `<span class="tutup">•</span>` di atas `<input>`-nya — `input` **tidak bisa**
-  punya pseudo-elemen, jadi topengnya harus elemen sungguhan. Angka yang baru
-  diketik diperlihatkan **650 ms** supaya yang mengetik bisa memastikan ketukannya
-  masuk, lalu tertutup. Nilai aslinya tidak pernah dihapus, jadi pembaca layar
+- **Kode yang diketik disamarkan SEKETIKA.** Tiap kotak punya `<label class="sel">`
+  dengan `<span class="tutup">•</span>` di atas `<input>`-nya — `input` **tidak
+  bisa** punya pseudo-elemen, jadi topengnya harus elemen sungguhan. Tidak ada
+  jendela "diperlihatkan sebentar"; umpan baliknya cuma sorot fokus yang pindah
+  ke kotak berikutnya. Nilai aslinya tidak pernah dihapus, jadi pembaca layar
   tetap membacakannya.
-- **Kode benar → tirai 15 detik**, lalu dialihkan ke peta. Bisa dilewati kapan
-  saja dengan klik atau tombol apa pun (kecuali kombinasi Ctrl/Alt/Meta, supaya
-  Ctrl+R dan F5 tidak ikut tertelan). Kalau `prefers-reduced-motion` aktif,
-  tirainya **tidak diputar sama sekali** dan langsung masuk.
+- **Yang mengirim hanya tindakan yang disengaja.** Kotak keenam terisi **tidak**
+  mengirim apa pun, dan menempel kode lengkap juga tidak — yang mengirim cuma
+  tombolnya atau Enter. Kodenya jadi sempat diperiksa dulu sebelum dikirim.
+- **Kode benar → tirai 15 detik**, lalu dialihkan ke peta. Tirai ini **tidak bisa
+  dilewati**: tidak ada pendengar klik maupun tombol untuk itu. Satu-satunya
+  jalan pintas adalah `prefers-reduced-motion`, dan itu bukan tombol lewati —
+  itu pengaturan sistem yang dipilih sendiri oleh pengguna perangkatnya, dan
+  yang memintanya tidak boleh dipaksa menonton 15 detik.
 - **Kode salah → tirai peringatan** yang menutup sendiri, dengan nomor percobaan
   yang dihitung sungguhan. Kode gagal karena sebab lain (dibatasi laju, server
   mati) **tidak** memicu tirai ini — itu bukan kode yang salah, dan menuduh
   pengguna salah kode saat servernya yang bermasalah itu menyesatkan.
+
+Ketiga yang pertama **membalik keputusan sebelumnya** (14 Sep 2026), dan itu
+disengaja: dulu angkanya diperlihatkan 650 ms, kotak keenam langsung mengirim,
+dan tirainya bisa dilewati. Uji-ujinya **dibalik, bukan dihapus** — dan
+`/tmp/uji_kunci_html.js` bagian 19 menjalankannya terhadap commit `8cd5032`
+(versi yang masih memakai ketiga perilaku lama itu) untuk membuktikan uji barunya
+memang merah di sana. Kalau salah satunya diam-diam kembali, bagian 4/5/6/10c
+yang jadi merah.
 
 Satu aturan yang dipegang seluruh teks di halaman itu: **tidak ada angka yang
 dikarang lalu dipajang seolah hasil pengukuran.** Batang telemetrinya tidak
