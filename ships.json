@@ -28,6 +28,12 @@
       "name": "PACIFIC WORLD",
       "imo": "9000259",
       "url": "https://www.myshiptracking.com/vessels/pacific-world-mmsi-357189000-imo-9000259"
+    },
+    {
+      "mmsi": "311000274",
+      "name": "ANTHEM OF THE SEAS",
+      "imo": "9656101",
+      "url": "https://www.myshiptracking.com/vessels/anthem-of-the-seas-mmsi-311000274-imo-9656101"
     }
   ]
 }
