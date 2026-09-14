@@ -292,11 +292,34 @@ MyShipTracking.
 diagonal **"API KEY REQUIRED"**, dan karena lapisan itu yang pertama terbuka,
 tulisan itulah yang langsung terlihat. Cermin lamanya di fastly **tidak
 menolong** — berkasnya identik bit-per-bit (md5 sama). Canvas gelap Esri datang
-dari host yang sama dengan lapisan satelit dan ubinnya bersih; karena basenya
-polos tanpa nama tempat (diperiksa di z6 dan z10), lapisan
-`World_Dark_Gray_Reference` ikut dipasang sebagai lapisan kedua di dalam satu
-`L.layerGroup`. Atribusi "Esri, HERE, Garmin, © OpenStreetMap contributors"
-ada di base-nya dan wajib dipertahankan.
+dari host yang sama dengan lapisan satelit dan ubinnya bersih. Atribusi
+"Esri, HERE, Garmin, © OpenStreetMap contributors" ada di base-nya dan wajib
+dipertahankan.
+
+**Lapisan nama tempat** (`Reference/World_Boundaries_and_Places`) dipasang di
+atas **kedua** lapisan Esri, sebagai lapisan kedua di dalam satu `L.layerGroup`.
+Ini bukan hiasan: tanpa itu lapisan **Satelit tidak punya satu pun nama tempat
+di zoom berapa pun**, dan lapisan **Gelap** hanya punya nama negara abu-abu
+redup tanpa halo yang tenggelam di daratan. Yang baru memberinya nama negara
+putih berhalo, titik dan nama kota, serta nama laut — dan itu tetap ada sampai
+zoom 2. Sebelumnya dipakai `Canvas/World_Dark_Gray_Reference`; di z2 lapisan
+itu **tidak punya satu pun piksel berlabel**, jadi memang itu sebabnya nama
+wilayah hilang begitu peta diperkecil. Satu nama laut bisa muncul dua kali
+(base Esri dan lapisan ini menaruhnya di titik yang berbeda); selebihnya
+saling menimpa. Kalau duplikatnya mengganggu, lapisan nama bisa dilepas dari
+"Satelit" saja tanpa mengubah yang lain.
+
+**Garis jejak ditebalkan saat peta diperkecil** (`gayaJejak()`), dan
+`drawTrail()` dipanggil ulang pada `zoomend`. Alasannya nyata dan terukur:
+WONDER OF THE SEAS menempuh 645 km dalam 63 jam, tapi karena rutenya
+**pulang-pergi**, seluruh lintasannya hanya menempati kotak 284 × 106 km. Pada
+zoom 3 — keadaan halaman dibuka ketika kapal-kapalnya berjauhan, sebab
+`fitBounds()` harus memuat Karibia dan lepas Afrika Selatan sekaligus — seluruh
+rute itu cuma **16 × 7 piksel**, dan garis 3 px di situ hilang di antara garis
+pantai. Jadi kalau rute tampak "tidak ada" saat peta diperkecil, itu bukan
+jejaknya yang gagal digambar: **perbesar petanya dan rutenya muncul utuh.**
+Menambah kapal yang berjauhan akan selalu membuka peta di zoom yang jauh
+seperti ini.
 
 Daftar **Kapal dilacak** di atas panel adalah pemilihnya: klik satu baris untuk
 memindahkan panel detail, penekanan peta, dan jejak penuh ke kapal itu.

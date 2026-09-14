@@ -584,10 +584,19 @@
     "Peta": L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19, attribution: "&copy; OpenStreetMap"
     }),
-    "Satelit": L.tileLayer(
-      "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      { maxZoom: 19, attribution: "Esri, Maxar, Earthstar Geographics" }
-    ),
+    // Citra satelit Esri + lapisan nama tempatnya. Tanpa lapisan kedua itu,
+    // "Satelit" tidak punya satu pun nama tempat di zoom berapa pun — citranya
+    // sendiri memang polos.
+    "Satelit": L.layerGroup([
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 19, attribution: "Esri, Maxar, Earthstar Geographics" }
+      ),
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 19 }
+      )
+    ]),
     // Dulu di sini CARTO (basemaps.cartocdn.com/dark_all). Sekarang setiap
     // ubinnya dicap diagonal "API KEY REQUIRED" — dan karena "Gelap" adalah
     // lapisan DEFAULT, tulisan itulah yang pertama terlihat saat halaman
@@ -595,9 +604,15 @@
     // berkasnya identik bit-per-bit (md5 sama persis).
     // Gantinya Canvas World_Dark_Gray milik Esri — host yang sama dengan
     // "Satelit", yang sudah terbukti melayani tanpa kunci dan ubinnya bersih.
-    // Base-nya polos tanpa nama tempat (diperiksa di z6 dan z10), jadi
-    // Reference-nya ikut dipasang; teksnya abu-abu terang (rata-rata 151,150,152)
-    // sehingga terbaca di atas latar gelap.
+    // Base-nya polos tanpa nama tempat di zoom dekat (diperiksa di z10), jadi
+    // lapisan nama tempatnya ikut dipasang. Yang dipakai
+    // `Reference/World_Boundaries_and_Places`, BUKAN
+    // `Canvas/World_Dark_Gray_Reference` seperti sebelumnya: di z2 yang lama
+    // tidak punya satu pun piksel berlabel, dan di z3 namanya abu-abu redup
+    // tanpa halo sehingga tenggelam di daratan. Yang baru memberinya nama
+    // negara putih berhalo, titik dan nama kota, serta nama laut — dan itu
+    // tetap ada sampai z2. Satu nama laut bisa muncul dua kali (base Esri dan
+    // lapisan ini menaruhnya di titik berbeda); selebihnya saling menimpa.
     "Gelap": L.layerGroup([
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
@@ -605,7 +620,7 @@
           attribution: "Esri, HERE, Garmin, &copy; OpenStreetMap contributors" }
       ),
       L.tileLayer(
-        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
         { maxZoom: 20 }
       )
     ])
@@ -935,10 +950,32 @@
     return segs;
   }
 
+  // Gaya garis jejak menurut zoom. Ini ADA karena rute bisa menyusut jadi
+  // belasan piksel begitu peta diperkecil: WONDER OF THE SEAS menempuh 645 km
+  // dalam 63 jam, tapi karena rutenya pulang-pergi, seluruh lintasannya hanya
+  // menempati kotak 284 x 106 km. Pada zoom 3 — keadaan halaman dibuka saat
+  // kapal-kapalnya berjauhan, fitBounds() memilih zoom itu — seluruh rute itu
+  // cuma 16 x 7 piksel, dan garis 3 px di antara garis pantai yang ramai
+  // hilang sama sekali. Ditebalkan saat zoom rendah supaya tetap terbaca
+  // sebagai lintasan; pada zoom dekat nilainya persis seperti semula.
+  //
+  // `z` dimasukkan sebagai argumen, bukan dibaca dari map di dalam sini, supaya
+  // aturannya bisa diuji tanpa peta sungguhan.
+  function gayaJejak(terpilih, terakhir, z) {
+    var tambah = z <= 4 ? 2.5 : (z <= 6 ? 1.5 : (z <= 8 ? 0.5 : 0));
+    if (terpilih) {
+      return { weight: (terakhir ? 3 : 2) + tambah,
+               opacity: terakhir ? 0.95 : (z <= 6 ? 0.5 : 0.35),
+               dashArray: terakhir ? null : "4 6" };
+    }
+    return { weight: 1.5 + tambah, opacity: z <= 6 ? 0.45 : 0.28, dashArray: null };
+  }
+
   function drawTrail() {
     trailLayer.clearLayers();
     if (!showTrail) return;
 
+    var z = map.getZoom();
     for (var mmsi in trailCache) {
       if (!trailCache.hasOwnProperty(mmsi)) continue;
       // Kapal yang sudah tidak dilacak lagi jangan digambar. trailCache-nya
@@ -952,18 +989,24 @@
 
       var warna = warnaUntuk(mmsi);
       for (var k = 0; k < segs.length; k++) {
-        var isLatest = (k === segs.length - 1);
+        var g = gayaJejak(terpilih, k === segs.length - 1, z);
         L.polyline(segs[k], {
           color: warna,
-          weight: terpilih ? (isLatest ? 3 : 2) : 1.5,
-          opacity: terpilih ? (isLatest ? 0.95 : 0.35) : 0.28,
-          dashArray: (terpilih && !isLatest) ? "4 6" : null,
+          weight: g.weight,
+          opacity: g.opacity,
+          dashArray: g.dashArray,
           lineJoin: "round",
           interactive: false
         }).addTo(trailLayer);
       }
     }
   }
+
+  // Jejak digambar ulang saat zoom berubah: tebalnya bergantung pada zoom, jadi
+  // tanpa ini rutenya tetap setipis semula ketika diperkecil — persis keluhan
+  // yang sedang diperbaiki. Hanya "zoomend", bukan "zoom", supaya tidak
+  // menggambar ulang berkali-kali selama animasi zoom berjalan.
+  map.on("zoomend", drawTrail);
 
   // -------------------------------------------------------------- animasi
   function ensureMarker(s) {
