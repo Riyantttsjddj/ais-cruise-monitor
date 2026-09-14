@@ -688,7 +688,7 @@ atas.
 |---|---|
 | `middleware.js` | gerbang di edge. Butuh `package.json` dengan `"type": "module"` — Vercel mensyaratkan itu untuk middleware di proyek tanpa framework |
 | `gerbang.js` | logika keputusannya saja, tanpa impor Vercel, supaya bisa diuji tanpa mendeploy |
-| `kunci.html` | halaman kuncinya. Berdiri sendiri, tanpa satu pun permintaan ke luar |
+| `kunci.html` | halaman kuncinya: terminal stasiun pelacakan — radar, log boot, dan enam kotak digit. Berdiri sendiri, tanpa satu pun permintaan ke luar |
 | `api/buka.py` | memeriksa kode, memasang kedua cookie (kredensial + tiket) |
 
 Tiga hal yang mudah dirusak tanpa sadar saat mengubah berkas-berkas itu:
