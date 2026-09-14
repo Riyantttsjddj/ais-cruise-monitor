@@ -305,21 +305,40 @@
   /* ------------------------------------------------------------- penanda kapal */
   .ship-icon{will-change:transform}
   .ship-icon svg{display:block;filter:drop-shadow(0 3px 6px rgba(0,0,0,.6))}
-  /* Pengecilan TIDAK BOLEH dikenakan pada .ship-icon: Leaflet memakai
+  /* JANGAN pernah menulis `transform` di .ship-icon: Leaflet memakai
      `transform: translate3d(…)` di elemen akar itu untuk memindahkan penanda,
-     jadi menulis `transform` di sana akan menimpa posisinya dan semua kapal
-     menumpuk di satu titik. Yang di-scale adalah pembungkus di dalamnya. */
-  .ship-badan{position:relative;transform-origin:50% 50%;transition:transform .18s ease}
-  .ship-icon.kecil .ship-badan{transform:scale(.58)}
-  .ship-icon.kecil{opacity:.82}
+     jadi menimpanya membuat semua kapal menumpuk di satu titik.
+     SEMUA penanda ukurannya sama — tidak ada lagi yang dibesarkan saat dipilih.
+     Dengan begitu tidak ada kapal yang tertutup kapal lain hanya karena ia
+     sedang tidak dilihat, dan jumlahnya bisa ditambah tanpa ada yang jadi
+     tidak terbaca. */
+  .ship-badan{position:relative}
+  /* Nama kapal tepat di bawah ikonnya. Setiap kapal yang dilacak dapat label:
+     delapan ikon yang bentuknya identik tidak bisa dibedakan tanpa itu, dan
+     warna saja tidak cukup karena warnanya berulang di kapal ke-11.
+     Ukurannya sengaja kecil dan `nowrap` supaya tetap muat saat kapalnya
+     banyak; latar gelapnya yang membuatnya terbaca di atas peta. */
+  .ship-nama{
+    position:absolute;left:50%;top:100%;transform:translateX(-50%);
+    margin-top:2px;padding:1px 5px;border-radius:5px;
+    font-size:9.5px;font-weight:650;line-height:1.35;letter-spacing:.1px;
+    color:#cfe2f5;background:rgba(7,13,22,.74);
+    border:1px solid rgba(120,170,220,.2);white-space:nowrap;
+    pointer-events:none
+  }
+  /* Yang terpilih ditandai warna label dan halo berdenyut, BUKAN ukuran. */
+  .ship-icon.terpilih .ship-nama{
+    color:#06231a;background:var(--accent);border-color:var(--accent)
+  }
   /* Halo berdenyut hanya untuk kapal terpilih. Delapan halo berdenyut
      bersamaan jadi ramai dan justru menyamarkan mana yang sedang dilihat. */
-  .ship-icon.kecil .ship-halo{display:none}
+  .ship-icon .ship-halo{display:none}
+  .ship-icon.terpilih .ship-halo{display:block}
   .ship-halo{
     position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;
-    border-radius:50%;border:2px solid var(--accent);opacity:0;
+    border-radius:50%;border:2px solid var(--accent);opacity:0
   }
-  .halo-live .ship-halo{animation:halo 2.6s ease-out infinite}
+  .halo-live.terpilih .ship-halo{animation:halo 2.6s ease-out infinite}
   @keyframes halo{
     0%{transform:scale(.35);opacity:.85}
     100%{transform:scale(1.25);opacity:0}
@@ -625,8 +644,11 @@
 
   function warnaUntuk(mmsi) { return warnaPeta[mmsi] || PALET[0]; }
 
+  // 16×32 = ukuran yang dulu dipakai kapal yang TIDAK terpilih (26×52 diskala
+  // 0,58). Sekarang semua kapal sebesar ini, jadi yang terpilih tidak lagi
+  // melompat ukurannya saat berpindah pilihan.
   function svgKapal(warna) {
-    return '<svg viewBox="0 0 32 64" width="26" height="52">' +
+    return '<svg viewBox="0 0 32 64" width="16" height="32">' +
       '<path d="M16 2 L28 20 L28 50 L20 62 L12 62 L4 50 L4 20 Z" ' +
             'fill="' + warna + '" stroke="#06231a" stroke-width="2" stroke-linejoin="round"/>' +
       '<path d="M16 12 L21 24 L11 24 Z" fill="#06231a" opacity=".55"/>' +
@@ -634,16 +656,22 @@
     '</svg>';
   }
 
-  // Dibuat dalam keadaan KECIL. Yang terpilih melepas kelas "kecil" lewat
-  // tandaiTerpilih(), jadi berpindah pilihan tidak perlu membuat ulang penanda.
-  function makeIcon(warna) {
+  // Semua penanda dibuat dengan bentuk yang sama; yang membedakan hanya warna,
+  // namanya, dan kelas "terpilih" yang dipasang lewat tandaiTerpilih() — jadi
+  // berpindah pilihan tidak perlu membongkar-pasang penanda.
+  //
+  // iconAnchor = titik tengah LAMBUNG kapal, bukan titik tengah kotaknya.
+  // Kotaknya pendek (16×32) dan labelnya menggantung di luarnya, jadi mengukur
+  // dari tengah kotak berarti kapalnya tampak bergeser sejauh tinggi label.
+  function makeIcon(warna, nama) {
     return L.divIcon({
-      className: "ship-icon halo-live kecil",
+      className: "ship-icon halo-live",
       html: '<div class="ship-badan"><div class="ship-halo"></div>' +
             '<div class="rot" style="transform-origin:50% 50%">' +
-            svgKapal(warna) + "</div></div>",
-      iconSize: [26, 52],
-      iconAnchor: [13, 26]
+            svgKapal(warna) + "</div>" +
+            '<div class="ship-nama">' + esc(nama) + "</div></div>",
+      iconSize: [16, 32],
+      iconAnchor: [8, 16]
     });
   }
 
@@ -923,18 +951,25 @@
   // -------------------------------------------------------------- animasi
   function ensureMarker(s) {
     var m = markers[s.mmsi];
+    var teks = s.label || s.name || s.mmsi;
     if (!m) {
       var penanda = L.marker([s.lat, s.lon],
-                             { icon: makeIcon(warnaUntuk(s.mmsi)), keyboard: false })
+                             { icon: makeIcon(warnaUntuk(s.mmsi), teks), keyboard: false })
                       .addTo(map);
       // Klik penanda = pilih kapal itu. Tanpa ini, satu-satunya cara berpindah
       // kapal adalah barisnya di daftar, dan itu tidak terlihat oleh mata.
       penanda.on("click", function () { selectShip(s.mmsi); });
+      var el = penanda.getElement();
       m = markers[s.mmsi] = {
         m: penanda,
-        rot: penanda.getElement().querySelector(".rot"),
+        rot: el.querySelector(".rot"),
+        nama: el.querySelector(".ship-nama"),
       };
     }
+    // Nama kapal bisa berubah (MMSI yang sama diisi ulang dengan nama yang
+    // lebih lengkap). Labelnya harus ikut — kalau tidak, yang tampil di peta
+    // adalah nama lama tanpa ada satu pun tanda bahwa itu sudah basi.
+    if (m.nama && m.nama.textContent !== teks) m.nama.textContent = teks;
     return m;
   }
 
@@ -951,15 +986,20 @@
     delete targets[mmsi];
   }
 
-  // Kelas "kecil" diatur di sini, bukan saat penanda dibuat, supaya berpindah
+  // Kelas "terpilih" diatur di sini, bukan saat penanda dibuat, supaya berpindah
   // pilihan tidak perlu membongkar-pasang penanda.
   function tandaiTerpilih() {
     for (var mmsi in markers) {
       if (!markers.hasOwnProperty(mmsi)) continue;
-      var el = markers[mmsi].m.getElement();
+      var m = markers[mmsi];
+      var el = m.m.getElement();
       if (!el) continue;
-      if (mmsi === selectedMmsi) el.classList.remove("kecil");
-      else el.classList.add("kecil");
+      var ini = (mmsi === selectedMmsi);
+      el.classList.toggle("terpilih", ini);
+      // Yang terpilih digambar paling atas. Sekarang semua penanda sama besar
+      // dan berlabel, jadi tanpa ini label kapal terpilih bisa tertutup
+      // penanda kapal lain yang kebetulan berdekatan di peta.
+      m.m.setZIndexOffset(ini ? 1000 : 0);
     }
   }
 
@@ -1092,7 +1132,7 @@
     var pel = markers[s.mmsi] && markers[s.mmsi].m.getElement();
     if (pel) {
       // Halo berdenyut menandakan kapalnya punya posisi. Hanya kapal terpilih
-      // yang halonya terlihat (lihat .ship-icon.kecil di CSS).
+      // yang halonya terlihat (lihat .ship-icon.terpilih di CSS).
       if (punyaFix) pel.classList.add("halo-live");
       else pel.classList.remove("halo-live");
     }

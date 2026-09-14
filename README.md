@@ -291,16 +291,23 @@ memindahkan panel detail, penekanan peta, dan jejak penuh ke kapal itu.
 **Semua kapal yang dilacak digambar sekaligus di peta**, bukan hanya yang
 sedang dipilih:
 
-- Kapal **terpilih** tampil besar, berlabel, dengan halo berdenyut dan jejak
-  lintasan penuh (sampai 6.000 titik).
-- Kapal **lain** tampil kecil dan lebih redup — tetap bisa diklik untuk
-  dipilih — dengan jejak yang dipotong ke 400 titik terakhir. Jejak penuh untuk
+- **Semua penanda ukurannya sama** dan **semuanya berlabel nama kapalnya**,
+  tepat di bawah ikonnya. Yang terpilih ditandai warna label (hijau pekat),
+  halo berdenyut, dan digambar paling atas — **bukan** dengan dibesarkan.
+  Ukuran yang seragam membuat tidak ada kapal yang tertutup kapal lain hanya
+  karena ia sedang tidak dilihat, dan jumlahnya bisa ditambah tanpa ada yang
+  jadi tidak terbaca. Labelnya sengaja kecil (9,5 px, satu baris, `nowrap`)
+  dengan latar gelap supaya tetap terbaca di atas peta.
+- Kapal **terpilih** memakai jejak lintasan penuh (sampai 6.000 titik).
+- Kapal **lain** jejaknya dipotong ke 400 titik terakhir. Jejak penuh untuk
   delapan kapal berarti ~48.000 titik polyline, dan itu membuat Leaflet
   tersendat; potongan pendek sudah cukup menunjukkan arah dan lintasan
   terkininya.
 - Tiap kapal punya **warna sendiri**, dan titik warna di barisnya di panel
-  memakai warna yang sama dengan penandanya di peta. Tanpa itu, delapan ikon
-  kapal yang bentuknya identik tidak bisa dihubungkan dengan barisnya.
+  memakai warna yang sama dengan penandanya di peta. Ini tetap berguna walau
+  sekarang ada label: warnanya berulang di kapal ke-11 (paletnya 10), dan
+  mencocokkan baris dengan penanda lewat warna jauh lebih cepat daripada
+  membaca nama satu per satu.
 - Saat pertama kali dibuka dengan lebih dari satu kapal, peta **membingkai
   semuanya** (`fitBounds`, zoom dibatasi 11) supaya "banyak kapal" itu langsung
   terlihat. Sesudah itu peta kembali mengikuti kapal terpilih — kalau tidak, ia
