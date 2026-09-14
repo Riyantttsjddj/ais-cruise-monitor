@@ -249,7 +249,8 @@ hanya siapa yang mengerjakannya:
 | `/` | Halaman peta | Halaman peta |
 | `/api/state` | Snapshot JSON semua kapal | — (diganti `data.json` di branch `data`) |
 | `/api/stream` | SSE, dorong snapshot saat berubah | — (diganti polling 30 detik) |
-| `/api/refresh` | Paksa polling **sekarang** | **Minta** GitHub menjalankan poller |
+| `/api/refresh` | Paksa polling **sekarang** | **Minta** GitHub menjalankan poller; balasannya menyertakan `sha` branch `data` sebagai titik acuan |
+| `/api/fresh?sejak=<sha>` | — | Apakah run poller sudah mendarat. Baca lewat GitHub API (tanpa CDN); `{ok, sha, baru}`, plus `data` saat `baru` benar |
 | `/api/search?q=…` | Cari di MyShipTracking; 400 kalau kata kunci < 3 huruf | sama |
 | `/api/add?mmsi=…&name=…&imo=…&url=…` | Tambah kapal; 409 kalau MMSI duplikat, bukan angka, atau batas tercapai | sama, tapi menulis lewat commit |
 | `/api/remove?mmsi=…` | Hapus kapal; 409 kalau tidak sedang dilacak atau itu kapal terakhir | sama, tapi menulis lewat commit |
@@ -399,7 +400,7 @@ berjalan di Vercel — ini arsitektur yang berbeda, dengan kemunduran nyata:
 |---|---|---|
 | Pembaruan posisi | **6 detik** (300 saat sandar) | **10 menit–5 jam**, tergantung kapan halaman dibuka |
 | Cara browser menerima data | SSE, didorong saat berubah | polling tiap 30 detik |
-| Tombol 🔄 Cek | mengecek saat itu juga (~3 detik) | **meminta**, lalu menunggu ~20–60 detik |
+| Tombol 🔄 Cek | mengecek saat itu juga (~3 detik) | **meminta**, lalu menunggu **~17–30 detik** (lewat `/api/fresh`, bukan CDN) |
 | Jejak lintasan | tersimpan di komputer Anda | tersimpan di repo, publik |
 | Tambah/hapus kapal | tulis ke `ships.json` lokal | commit ke repo, perlu token |
 | Butuh akun | tidak | GitHub + Vercel |
@@ -408,6 +409,47 @@ Hiburannya: data dari situs sumbernya sendiri tertinggal berjam-jam (pernah
 terukur `age` ≈ 7 jam). Selisih 6 detik dan 5 menit praktis tidak terasa di
 atas data yang umurnya beberapa jam. Yang benar-benar terasa adalah tombol
 🔄 Cek, yang tidak lagi instan.
+
+### Kenapa 🔄 Cek menunggu lewat `/api/fresh`, bukan berkas mentahnya
+
+Tombol itu meminta GitHub menjalankan poller, lalu harus tahu kapan run-nya
+selesai. Cara yang wajar — membaca ulang `data.json` dari
+`raw.githubusercontent.com` sambil menempelkan `?t=` sebagai cache-buster —
+**tidak bisa bekerja**, dan itu pernah jadi bug nyata di sini: tombolnya
+menunggu 2,5 menit lalu menampilkan pesan yang menuduh runner GitHub lambat.
+
+Sebabnya: **CDN `raw.githubusercontent.com` mengabaikan query string saat
+menentukan cache key.** `?t=` hanya mengalahkan cache *peramban*, bukan cache
+CDN-nya. Terukur di repo ini:
+
+```
+$ curl -sI ".../data/data.json?t=111" | grep -iE 'etag|x-cache'
+etag: "9c9f23ea…"        x-cache: MISS
+$ curl -sI ".../data/data.json?t=222" | grep -iE 'etag|x-cache'
+etag: "9c9f23ea…"        x-cache: HIT     ← etag IDENTIK, tapi dari cache
+```
+
+Dua URL yang berbeda memetakan ke satu entri cache. Karena balasannya membawa
+`cache-control: max-age=300`, berkas yang sama dilayani basi sampai lima menit
+— dan itu sudah diperkirakan: setelah sebuah run mendarat, versi mentahnya
+terbukti **tertinggal 37 detik dan tetap begitu** selama diamati.
+
+Perbaikannya: penanda kesegarannya bukan stempel waktu di dalam berkas, tapi
+**sha commit branch `data`**, dibaca lewat **GitHub API** (`/api/fresh`) yang
+tidak punya cache sama sekali. Branch `data` selalu di-force-push tepat satu
+commit, jadi sha-nya berubah setiap run selesai. Saat sha-nya sudah berbeda,
+isi `data.json` ikut dikirim di balasan itu juga — jadi halaman tidak perlu
+menyentuh CDN untuk tahu hasilnya. Terukur: **selesai dalam ~17 detik.**
+
+`/api/refresh` mengembalikan sha **sebelum** run dipicu, bukan sesudah. Kalau
+sesudah, run yang keburu selesai di antara kedua panggilan itu akan
+menghasilkan sha yang sudah baru — dan UI lalu menunggu perubahan yang tidak
+akan pernah datang lagi.
+
+Catatan: **polling latar tiap 30 detik tetap memakai CDN**, dan itu disengaja.
+Ia memang bisa tertinggal sampai 5 menit, tapi itu tidak apa-apa (lihat
+`BATAS_BASI` 10 menit) dan jauh lebih hemat: `/api/fresh` memakan satu
+panggilan GitHub API tiap kali, sedangkan jatahnya 5000/jam per token.
 
 ### Arsitekturnya
 
@@ -418,7 +460,7 @@ GitHub Actions                     Vercel
 │  jadwal + diminta    │          │                        │
 │  tracker.py --once   │          │ api/search  api/add    │
 │         ↓            │          │ api/remove  api/limit  │
-│  branch `data`  ─────┼── dibaca │ api/refresh            │
+│  branch `data`  ─────┼── dibaca │ api/refresh  api/fresh  │
 │  data.json           │    oleh  │        ↓               │
 │  state.json          │          │  GitHub Contents API   │
 └──────────────────────┘          │  → commit ships.json   │

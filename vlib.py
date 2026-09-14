@@ -40,6 +40,10 @@ SHIPS_PATH = "ships.json"
 BRANCH = "main"
 WORKFLOW = "poll.yml"
 
+# Hasil poller ada di branch `data`, bukan `main`.
+BRANCH_DATA = "data"
+DATA_PATH = "data.json"
+
 
 class ApiError(Exception):
     """Kesalahan yang aman ditampilkan ke pengguna, dengan kode HTTP."""
@@ -170,6 +174,43 @@ def baca_ships() -> tuple[dict, str]:
     if not isinstance(cfg, dict):
         cfg = {}
     return cfg, d.get("sha", "")
+
+
+def sha_data() -> str:
+    """Commit terakhir di branch `data`.
+
+    Ini ADA karena `raw.githubusercontent.com` tidak bisa dipakai untuk tahu
+    kapan sebuah run selesai. CDN-nya mengabaikan query string saat menentukan
+    cache key, jadi `?t=` TIDAK menembus cache — terukur: dua URL dengan `?t=`
+    berbeda mengembalikan `etag` yang identik dengan `x-cache: HIT`, dan
+    `cache-control: max-age=300` membuat berkas yang sama dilayani basi sampai
+    5 menit. GitHub API tidak punya masalah itu.
+
+    Branch `data` selalu di-force-push tepat satu commit, jadi sha-nya berubah
+    setiap kali poller selesai — itulah yang dipakai UI sebagai penanda.
+    """
+    try:
+        d = _gh("GET", f"commits/{BRANCH_DATA}")
+    except ApiError as exc:
+        if "404" in exc.pesan:
+            raise ApiError(
+                f"branch `{BRANCH_DATA}` belum ada di repo. Jalankan workflow "
+                f"{WORKFLOW} sekali dulu (Actions → Run workflow).", 502)
+        raise
+    return str(d.get("sha") or "")
+
+
+def baca_data() -> dict:
+    """Isi `data.json` dari branch `data`, lewat GitHub API (tanpa CDN).
+
+    Dipakai hanya saat ada perubahan, jadi biayanya satu panggilan API per
+    klik — bukan per polling.
+    """
+    d = _gh("GET", f"contents/{DATA_PATH}?ref={BRANCH_DATA}")
+    try:
+        return json.loads(base64.b64decode(d["content"]).decode("utf-8"))
+    except (KeyError, ValueError) as exc:
+        raise ApiError(f"{DATA_PATH} di branch {BRANCH_DATA} tidak terbaca: {exc}", 502)
 
 
 def tulis_ships(cfg: dict, sha: str, pesan: str):

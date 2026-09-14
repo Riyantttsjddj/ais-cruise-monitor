@@ -1342,28 +1342,50 @@
   }
 
   // Versi Vercel: /api/refresh hanya MEMINTA GitHub menjalankan poller-nya —
-  // yang mengecek tetap runner GitHub, dan runner perlu waktu untuk mulai.
-  // Jadi tombol ini menunggu sampai stempel waktu data benar-benar berubah,
-  // bukan sekadar "permintaan sudah terkirim". Itu bedanya dengan versi lokal,
-  // dan pesannya dibuat jujur supaya tidak terkesan instan.
-  var BATAS_TUNGGU = 150000;   // 2,5 menit — jadwal normalnya 5 menit sekali
+  // yang mengecek tetap runner GitHub, dan runner perlu ~20 detik untuk selesai.
+  // Jadi tombol ini menunggu sampai run-nya benar-benar mendarat, bukan sekadar
+  // "permintaan sudah terkirim". Pesannya dibuat jujur supaya tidak terkesan instan.
+  //
+  // CARA MENUNGGUNYA PENTING, dan versi sebelumnya salah. Dulu fungsi ini
+  // membaca URL_JAUH berulang-ulang sambil menempelkan `?t=` sebagai
+  // cache-buster. Itu tidak pernah bisa berhasil: raw.githubusercontent.com
+  // mengabaikan query string saat menentukan cache key-nya, jadi `?t=` hanya
+  // mengalahkan cache PERAMBAN, bukan cache CDN-nya. Terukur di repo ini — dua
+  // URL dengan `?t=` berbeda mengembalikan etag yang identik dengan
+  // `x-cache: HIT`, dan `cache-control: max-age=300` membuat berkas yang sama
+  // dilayani basi sampai 5 menit. Hasilnya tombol menunggu 2,5 menit lalu
+  // menampilkan pesan yang menuduh runner-nya lambat, padahal data barunya sudah
+  // ada di branch `data` sejak ~20 detik setelah diklik.
+  //
+  // Sekarang penanda kesegarannya adalah sha commit branch `data`, dibaca lewat
+  // /api/fresh (GitHub API, tanpa CDN). Branch itu selalu di-force-push tepat
+  // satu commit, jadi sha-nya berubah setiap run selesai. Saat sha-nya sudah
+  // berbeda, isi data.json-nya ikut dikirim balasan itu juga — jadi halaman ini
+  // tidak perlu menyentuh CDN sama sekali untuk tahu hasilnya.
+  var BATAS_TUNGGU = 150000;   // 2,5 menit — jaring pengaman, bukan target
+  var JEDA_TANYA = 4000;       // jangan menghajar GitHub API tiap detik
 
-  function tungguStempelBaru(awal, batasMs) {
+  function tungguRun(sha, batasMs, b) {
     var mulai = Date.now();
     return new Promise(function (selesai) {
       (function sekali() {
-        fetch(URL_JAUH + "?t=" + Date.now())
+        b.textContent = "⏳ Menunggu runner… " +
+                        Math.round((Date.now() - mulai) / 1000) + " detik";
+        fetch("/api/fresh?sejak=" + encodeURIComponent(sha) + "&t=" + Date.now())
           .then(function (r) { return r.json(); })
           .then(function (d) {
-            // server_time adalah waktu snapshot itu dibuat. Kalau sudah berbeda
-            // dari yang tadi, berarti run baru sudah selesai dan mendorong hasilnya.
-            if (d.server_time && d.server_time !== awal) { selesai(d); return; }
+            if (!d || !d.ok) {
+              toast((d && d.error) || "Tidak bisa memeriksa hasil run");
+              selesai(null);
+              return;
+            }
+            if (d.baru && d.data) { selesai(d.data); return; }
             if (Date.now() - mulai > batasMs) { selesai(null); return; }
-            setTimeout(sekali, 5000);
+            setTimeout(sekali, JEDA_TANYA);
           })
           .catch(function () {
             if (Date.now() - mulai > batasMs) { selesai(null); return; }
-            setTimeout(sekali, 5000);
+            setTimeout(sekali, JEDA_TANYA);
           });
       })();
     });
@@ -1374,11 +1396,17 @@
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d.ok) { toast(d.error || "Gagal meminta pembaruan"); return; }
-        b.textContent = "⏳ Menunggu runner…";
-        return tungguStempelBaru(serverTime, BATAS_TUNGGU).then(function (baru) {
+        if (!d.sha) {
+          // Tidak ada titik acuan (branch `data` belum ada / tidak terbaca).
+          // Jarang, dan kalau itu terjadi halaman ini memang belum punya data
+          // apa pun — jadi jangan berpura-pura bisa menunggu.
+          toast("Sudah diminta — data baru akan menyusul.");
+          return;
+        }
+        return tungguRun(d.sha, BATAS_TUNGGU, b).then(function (baru) {
           if (!baru) {
-            toast("Sudah diminta, tapi runner GitHub belum selesai. " +
-                  "Coba lagi sebentar lagi.");
+            toast("Runner GitHub belum selesai dalam " +
+                  Math.round(BATAS_TUNGGU / 1000) + " detik. Coba lagi.");
             return;
           }
           laporkan(baru, before);
