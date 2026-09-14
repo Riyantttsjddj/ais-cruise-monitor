@@ -688,7 +688,7 @@ atas.
 |---|---|
 | `middleware.js` | gerbang di edge. Butuh `package.json` dengan `"type": "module"` — Vercel mensyaratkan itu untuk middleware di proyek tanpa framework |
 | `gerbang.js` | logika keputusannya saja, tanpa impor Vercel, supaya bisa diuji tanpa mendeploy |
-| `kunci.html` | halaman kuncinya: terminal stasiun pelacakan — radar, log boot, dan enam kotak digit. Berdiri sendiri, tanpa satu pun permintaan ke luar |
+| `kunci.html` | halaman kuncinya: konsol stasiun pelacakan berbahasa Inggris — radar, log boot, telemetri, dan enam kotak digit. Berdiri sendiri, tanpa satu pun permintaan ke luar |
 | `api/buka.py` | memeriksa kode, memasang kedua cookie (kredensial + tiket) |
 
 Tiga hal yang mudah dirusak tanpa sadar saat mengubah berkas-berkas itu:
@@ -715,6 +715,49 @@ dimuat tepat setelah kodenya dimasukkan", bukan "apakah orang ini tahu kodenya".
 **Di lokal tidak ada gerbang sama sekali.** `python3 tracker.py` tetap membuka
 halaman tanpa kode; middleware hanya ada di Vercel. Ini disengaja supaya
 pekerjaan di mesin sendiri tidak terganggu.
+
+**Tampilan `kunci.html`.** Antarmukanya berbahasa Inggris (komentarnya tetap
+Indonesia). Tiga perilakunya sengaja, dan ketiganya punya uji sendiri:
+
+- **Kode yang diketik disamarkan.** Tiap kotak punya `<label class="sel">` dengan
+  `<span class="tutup">•</span>` di atas `<input>`-nya — `input` **tidak bisa**
+  punya pseudo-elemen, jadi topengnya harus elemen sungguhan. Angka yang baru
+  diketik diperlihatkan **650 ms** supaya yang mengetik bisa memastikan ketukannya
+  masuk, lalu tertutup. Nilai aslinya tidak pernah dihapus, jadi pembaca layar
+  tetap membacakannya.
+- **Kode benar → tirai 15 detik**, lalu dialihkan ke peta. Bisa dilewati kapan
+  saja dengan klik atau tombol apa pun (kecuali kombinasi Ctrl/Alt/Meta, supaya
+  Ctrl+R dan F5 tidak ikut tertelan). Kalau `prefers-reduced-motion` aktif,
+  tirainya **tidak diputar sama sekali** dan langsung masuk.
+- **Kode salah → tirai peringatan** yang menutup sendiri, dengan nomor percobaan
+  yang dihitung sungguhan. Kode gagal karena sebab lain (dibatasi laju, server
+  mati) **tidak** memicu tirai ini — itu bukan kode yang salah, dan menuduh
+  pengguna salah kode saat servernya yang bermasalah itu menyesatkan.
+
+Satu aturan yang dipegang seluruh teks di halaman itu: **tidak ada angka yang
+dikarang lalu dipajang seolah hasil pengukuran.** Batang telemetrinya tidak
+berangka, dan penghitung waktunya menghitung waktu sungguhan.
+
+Dua jebakan yang sudah pernah menggigit, dicatat supaya tidak diulang:
+
+- **Sorotan seleksi menembus topeng.** `fokusKe()` memanggil `select()` supaya
+  angka yang sudah ada bisa langsung ditimpa — dan peramban menggambar teks yang
+  tersorot dengan warna yang bisa dibaca, **menembus `color:transparent`**.
+  Akibatnya menyentuh kotak yang sudah tersamar memperlihatkan angkanya. Kelas
+  `.topeng`-nya sudah benar; yang salah cuma gambarnya, jadi **DOM tidak
+  menunjukkan bug ini** dan hanya ketahuan dari potret layar. Obatnya
+  `.sel.topeng .digit::selection{background:transparent;color:transparent}` —
+  `background` saja tidak cukup, yang membuat angkanya terbaca adalah warna
+  teksnya. `/tmp/uji_kunci_html.js` bagian 10g menjaga keduanya sekaligus
+  memastikan jalur `select()`-nya masih benar-benar bisa ditempuh.
+- **Chrome headless memajukan `setTimeout` dengan `--virtual-time-budget`, tapi
+  TIDAK memajukan jam animasi/transisi CSS.** Animasi masuk yang sedang berjalan
+  terpotret separuh muncul, dan penanda fase yang baru berganti terpotret dalam
+  warna lamanya — dua-duanya terbaca seperti bug halaman padahal bug alat
+  potretnya. Kalau ada yang tampak aneh di potret, **periksa DOM-nya dulu**
+  (`--dump-dom`) sebelum mengubah halaman; kalau DOM-nya benar, yang perlu
+  diperbaiki alat potretnya. Perbaikannya ada di `/tmp/lihat/potret.py`, **tidak
+  pernah** di berkas yang dikirim.
 
 ### Kenapa poller-nya di GitHub, bukan di Vercel
 

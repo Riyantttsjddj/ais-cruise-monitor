@@ -1,30 +1,47 @@
 <!doctype html>
-<html lang="id">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="color-scheme" content="dark">
-<title>Akses Terbatas — Stasiun Pelacakan Kapal</title>
+<title>Restricted Access · Vessel Tracking</title>
 <!--
   Halaman kunci. SENGAJA berdiri sendiri: tidak ada satu pun permintaan ke luar
   (font, ikon, skrip, atau gaya dari CDN). Alasannya bukan kerapian — halaman
   ini adalah satu-satunya yang boleh diakses sebelum kodenya dimasukkan, jadi
   kalau ia bergantung pada pihak ketiga, situsnya ikut mati saat pihak ketiga
-  itu bermasalah. Seluruh efek di sini (radar, garis pindai, tabung CRT) dibuat
-  dari gradien CSS, bukan gambar.
+  itu bermasalah. Seluruh efek di sini dibuat dari gradien CSS, bukan gambar.
 
   Warnanya disalin dari :root di index.html. Disalin, bukan diimpor, justru
   supaya tidak ada ketergantungan ke berkas halaman yang sedang dikunci — dan
   supaya perpindahan ke peta tidak terasa seperti berpindah situs.
+
+  Tampilannya berbahasa Inggris, tapi catatan ini berbahasa Indonesia seperti
+  sisa proyeknya — yang membaca kode ini Anda, bukan pengunjung.
+
+  Nama kelas lama (`digit`, `isi`, `salah`, `galat`, `terbuka`, id `kode`/
+  `buka`/`pesan`) SENGAJA dibiarkan apa adanya. Itu kontrak yang diuji 82 kasus
+  di /tmp/uji_kunci_html.js; menggantinya demi kerapian penamaan berarti
+  mempertaruhkan 82 uji yang sedang lulus untuk keuntungan yang tidak dilihat
+  siapa pun. Unsur BARU memakai nama Inggris.
+
+  Satu aturan yang dipegang seluruh teks di halaman ini: TIDAK ADA angka yang
+  dikarang lalu dipajang seolah hasil pengukuran. Yang ditampilkan sebagai angka
+  hanya yang benar-benar nyata (jam UTC, lama sesi, jumlah percobaan). Sisanya
+  sengaja tidak berangka — batang, gelombang, dan aliran hex jelas-jelas hiasan,
+  bukan klaim. Klaim keamanan yang palsu ("AES-256", "access is monitored")
+  tidak ada di sini justru karena tidak ada yang memantau.
 -->
 <style>
   :root{
     --bg:#070d16;
     --panel-solid:#0c1421;
     --line:rgba(120,170,220,.16);
+    --line-soft:rgba(120,170,220,.09);
     --ink:#e8f2ff;
     --ink-dim:#8aa4c0;
+    --ink-faint:#5c7a99;
     --accent:#3ddc97;
     --accent-2:#38bdf8;
     --bad:#f87171;
@@ -34,14 +51,18 @@
     --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
   }
   *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
+  html{height:100%}
   body{
+    min-height:100%;margin:0;
     background:var(--bg);color:var(--ink);
     font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     -webkit-font-smoothing:antialiased;
-    display:flex;align-items:center;justify-content:center;
-    padding:24px;overflow:hidden;
+    /* `auto`, bukan `hidden`: di layar pendek isinya harus tetap bisa dicapai.
+       Latarnya `fixed`, jadi memendam gulirannya tidak menghilangkan apa pun. */
+    overflow-x:hidden;overflow-y:auto;
+    padding:22px 18px;
   }
+  .num{font-variant-numeric:tabular-nums}
 
   /* ---------------------------------------------------------- latar */
   .latar{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
@@ -92,24 +113,64 @@
       radial-gradient(ellipse at 50% 45%,transparent 30%,rgba(0,0,0,.55) 100%);
   }
 
+  /* ---------------------------------------------------------- kerangka */
+  .shell{
+    position:relative;z-index:1;
+    max-width:1000px;margin:0 auto;
+    display:grid;gap:14px;
+    grid-template-columns:minmax(0,1fr);
+    align-content:start;
+  }
+  /* Rail kiri-kanan hanya muncul kalau memang ada ruang. Di ponsel keduanya
+     dibuang — yang tersisa tetap utuh, bukan versi yang terpotong. */
+  .rail{display:none}
+
+  /* --------------------------------------------------------- pita atas */
+  .strip{
+    display:flex;align-items:center;gap:12px;
+    padding:7px 12px;
+    border:1px solid var(--line-soft);border-radius:9px;
+    background:linear-gradient(180deg,rgba(12,20,33,.82),rgba(9,15,26,.72));
+    font:600 10px/1 var(--mono);letter-spacing:.15em;text-transform:uppercase;
+    color:var(--ink-dim);overflow:hidden;
+  }
+  .strip .tag{
+    flex:none;color:var(--bad);border:1px solid rgba(248,113,113,.4);
+    border-radius:4px;padding:3px 6px;letter-spacing:.12em;
+  }
+  /* Ticker: dua salinan berdampingan yang bergeser sejauh satu salinan, jadi
+     sambungannya tidak pernah terlihat. */
+  .ticker{
+    flex:1;min-width:0;overflow:hidden;
+    -webkit-mask-image:linear-gradient(to right,transparent,#000 18%,#000 46%,transparent 84%);
+            mask-image:linear-gradient(to right,transparent,#000 18%,#000 46%,transparent 84%);
+  }
+  .ticker div{display:flex;width:max-content;animation:jalur 26s linear infinite}
+  .ticker span{white-space:nowrap;padding-right:38px;color:var(--ink-faint)}
+  .strip .waktu{flex:none;color:var(--ink);font-variant-numeric:tabular-nums}
+
   /* ---------------------------------------------------------- kartu */
   .terminal{
-    position:relative;z-index:1;
-    width:100%;max-width:430px;
+    position:relative;
+    width:100%;max-width:470px;margin:0 auto;
     background:linear-gradient(180deg,rgba(12,20,33,.94),rgba(9,15,26,.97));
     border:1px solid var(--line);border-radius:var(--radius);
     box-shadow:var(--shadow),0 0 0 1px rgba(61,220,151,.05),0 0 60px -18px rgba(61,220,151,.35);
-    padding:22px 24px 16px;
+    padding:20px 22px 14px;
     -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
     transition:border-color .25s,box-shadow .25s;
   }
-  /* Sudut siku — aksen kecil yang membuat bingkai terasa seperti perangkat. */
+  /* Sudut siku di KEEMPAT penjuru — aksen kecil yang membuat bingkai terasa
+     seperti perangkat, bukan seperti kartu. */
   .terminal::before,.terminal::after{
     content:"";position:absolute;width:14px;height:14px;pointer-events:none;
     border-color:var(--accent);opacity:.5;transition:opacity .25s,border-color .25s;
   }
   .terminal::before{top:-1px;left:-1px;border-top:2px solid;border-left:2px solid;border-top-left-radius:var(--radius)}
   .terminal::after{bottom:-1px;right:-1px;border-bottom:2px solid;border-right:2px solid;border-bottom-right-radius:var(--radius)}
+  .siku{position:absolute;width:14px;height:14px;pointer-events:none;border-color:var(--accent);opacity:.5;transition:opacity .25s,border-color .25s}
+  .siku.a{top:-1px;right:-1px;border-top:2px solid;border-right:2px solid;border-top-right-radius:var(--radius)}
+  .siku.b{bottom:-1px;left:-1px;border-bottom:2px solid;border-left:2px solid;border-bottom-left-radius:var(--radius)}
 
   .kop{
     display:flex;align-items:center;gap:7px;
@@ -118,23 +179,22 @@
   }
   .kop .titik{
     width:6px;height:6px;border-radius:50%;background:var(--accent);
-    box-shadow:0 0 8px var(--accent);animation:denyut 2.4s ease-in-out infinite;
+    box-shadow:0 0 8px var(--accent);animation:denyut 2.4s ease-in-out infinite;flex:none;
   }
+  .kop .node{margin-left:auto;color:var(--ink-faint);letter-spacing:.12em}
   h1{
-    margin:14px 0 4px;font:700 27px/1.1 var(--mono);
+    margin:13px 0 4px;font:700 27px/1.1 var(--mono);
     letter-spacing:.06em;text-transform:uppercase;color:var(--ink);
   }
-  .bantu{margin:0 0 16px;color:var(--ink-dim);font-size:12.5px}
+  .bantu{margin:0 0 14px;color:var(--ink-dim);font-size:12.5px}
 
   /* ------------------------------------------------- log boot */
-  /* Tingginya DISIAGAKAN untuk tiga baris, tapi tidak DIPAKU. `height` tetap
+  /* Tingginya DISIAGAKAN untuk empat baris, tapi tidak DIPAKU. `height` tetap
      akan memotong baris yang membungkus di layar sempit — teks yang terpangkas
-     separuh jauh lebih buruk daripada kartu yang bergeser satu baris. Dengan
-     `min-height`, kotak berhenti tumbuh justru karena isinya memang sudah
-     pas tiga baris. */
+     separuh jauh lebih buruk daripada kartu yang bergeser satu baris. */
   .boot{
-    margin:0 0 16px;padding:10px 12px;
-    min-height:calc(3 * 1.75em + 22px);
+    margin:0 0 14px;padding:9px 11px;
+    min-height:calc(4 * 1.75em + 20px);
     background:rgba(4,9,16,.72);border:1px solid var(--line);border-radius:9px;
     font:11.5px/1.75 var(--mono);color:var(--ink-dim);
     white-space:pre-wrap;word-break:break-word;overflow:hidden;
@@ -154,13 +214,17 @@
     position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);
     white-space:nowrap;
   }
+  /* Tiap kotak dibungkus `.sel` supaya topengnya bisa ditumpuk di atas input.
+     Sebuah `<input>` tidak bisa punya pseudo-element, jadi menutupinya dari
+     dalam kotak yang sama memang tidak mungkin. */
+  .sel{position:relative;display:block}
   .digit{
     width:100%;min-width:0;aspect-ratio:5/6;
     background:rgba(4,9,16,.85);color:var(--ink);
     border:1px solid var(--line);border-radius:10px;
     font:600 25px/1 var(--mono);text-align:center;
     caret-color:var(--accent);outline:none;padding:0;
-    transition:border-color .15s,box-shadow .15s,background .15s,transform .12s;
+    transition:border-color .15s,box-shadow .15s,background .15s,transform .12s,color .12s;
     -moz-appearance:textfield;
   }
   .digit::-webkit-outer-spin-button,
@@ -171,17 +235,38 @@
     box-shadow:0 0 0 3px rgba(61,220,151,.14),0 0 18px -6px var(--accent);
     transform:translateY(-1px);
   }
-  /* Terisi: angkanya menyala, jadi mata bisa memeriksa sebelum menekan Buka. */
+  /* Terisi: angkanya menyala — selama belum tertutup topeng. */
   .digit.isi{color:var(--accent);border-color:rgba(61,220,151,.42)}
+
+  /* Topengnya. Warnanya SENGAJA tidak mewarisi `.isi` supaya saat kode ditolak
+     yang memerah cuma bingkainya, bukan titik-titiknya — kalau titiknya ikut
+     merah, seluruh baris terlihat seperti sudah terisi kode yang salah. */
+  .tutup{
+    position:absolute;inset:0;display:grid;place-items:center;
+    font:600 25px/1 var(--mono);color:var(--accent);
+    opacity:0;pointer-events:none;transition:opacity .13s;
+    text-shadow:0 0 12px rgba(61,220,151,.45);
+  }
+  .sel.topeng .tutup{opacity:1}
+  .sel.topeng .digit{color:transparent;caret-color:transparent}
+  /* Sorotan seleksi ikut disembunyikan, dan ini BUKAN hiasan.
+     `fokusKe()` memanggil `select()` supaya angka yang sudah ada bisa langsung
+     ditimpa — dan peramban menampilkan teks yang tersorot dengan warna yang
+     bisa dibaca, menembus `color:transparent` di atas. Akibatnya menyentuh
+     kotak yang sudah terisi memperlihatkan angkanya, persis di saat topengnya
+     seharusnya menutup. Seleksinya tetap ada; yang dihilangkan cuma gambarnya. */
+  .sel.topeng .digit::selection{background:transparent;color:transparent}
+
   fieldset.kode.salah .digit{
     border-color:var(--bad);color:var(--bad);
     box-shadow:0 0 0 3px rgba(248,113,113,.13);
   }
+  fieldset.kode.salah .tutup{color:var(--bad);text-shadow:0 0 12px rgba(248,113,113,.45)}
   fieldset.kode.salah{animation:getar .42s cubic-bezier(.36,.07,.19,.97)}
 
   /* ------------------------------------------------- tombol */
   button.buka{
-    width:100%;margin-top:16px;padding:13px;
+    width:100%;margin-top:14px;padding:13px;
     display:flex;align-items:center;justify-content:center;gap:9px;
     border:1px solid rgba(61,220,151,.55);border-radius:10px;
     background:linear-gradient(180deg,rgba(61,220,151,.16),rgba(61,220,151,.07));
@@ -198,8 +283,11 @@
   button.buka .tanda{font-size:14px;line-height:1}
 
   /* ------------------------------------------------- pesan status */
+  /* Satu baris disediakan, bukan dua. Pesan terpanjang di halaman ini masih
+     muat satu baris di layar tersempit; menyediakan dua baris berarti ruang
+     mati selebar satu baris penuh yang menganga di setiap keadaan normal. */
   .pesan{
-    margin-top:12px;min-height:34px;
+    margin-top:10px;min-height:1.45em;
     font:12px/1.45 var(--mono);
     display:flex;align-items:center;gap:7px;
   }
@@ -210,10 +298,35 @@
   .pesan.galat{color:var(--bad)}
   .pesan.terbuka{color:var(--accent)}
 
+  /* ------------------------------------------------- telemetri */
+  /* Batangnya sengaja TANPA angka. Angka di sini hanya akan jadi karangan yang
+     tampak seperti hasil ukur; batang yang bergerak sudah memberi kesan hidup
+     tanpa berpura-pura mengukur apa pun. */
+  .telemetri{
+    margin-top:13px;padding:11px 12px;
+    display:grid;grid-template-columns:auto 1fr auto;gap:7px 10px;align-items:center;
+    background:rgba(4,9,16,.5);border:1px solid var(--line-soft);border-radius:9px;
+    font:600 9.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;
+    color:var(--ink-faint);
+  }
+  .telemetri .bar{
+    position:relative;height:4px;border-radius:2px;
+    background:rgba(120,170,220,.13);overflow:hidden;
+  }
+  .telemetri .bar i{
+    position:absolute;inset:0;transform-origin:0 50%;
+    background:linear-gradient(90deg,var(--accent-2),var(--accent));
+    animation:naikturun 3.4s ease-in-out infinite alternate;
+  }
+  .telemetri .bar i.b2{animation-duration:4.6s;animation-delay:-1.1s}
+  .telemetri .bar i.b3{animation-duration:2.7s;animation-delay:-2.2s}
+  .telemetri .bar i.b4{animation-duration:5.5s;animation-delay:-.6s}
+  .telemetri .status{color:var(--accent);letter-spacing:.1em}
+
   /* ------------------------------------------------- kaki */
   .kaki{
     display:flex;align-items:center;justify-content:space-between;gap:10px;
-    margin-top:14px;padding-top:11px;border-top:1px solid var(--line);
+    margin-top:12px;padding-top:10px;border-top:1px solid var(--line);
     font:10.5px/1 var(--mono);letter-spacing:.08em;color:var(--ink-dim);
     text-transform:uppercase;
   }
@@ -223,14 +336,18 @@
   /* ------------------------------------------------- keadaan */
   /* Terkunci salah: seluruh bingkai ikut memerah, bukan cuma teksnya. */
   body.galat .terminal{border-color:rgba(248,113,113,.45);box-shadow:var(--shadow),0 0 60px -18px var(--bad)}
-  body.galat .terminal::before,body.galat .terminal::after{border-color:var(--bad);opacity:.85}
+  body.galat .terminal::before,body.galat .terminal::after,
+  body.galat .siku{border-color:var(--bad);opacity:.85}
   body.terbuka .terminal{border-color:rgba(61,220,151,.6);box-shadow:var(--shadow),0 0 80px -14px var(--accent)}
-  body.terbuka .terminal::before,body.terbuka .terminal::after{border-color:var(--accent);opacity:1}
+  body.terbuka .terminal::before,body.terbuka .terminal::after,
+  body.terbuka .siku{border-color:var(--accent);opacity:1}
 
   @keyframes putar{to{transform:translate(-50%,-50%) rotate(360deg)}}
   @keyframes turun{to{top:100vh}}
   @keyframes kedip{50%{opacity:0}}
   @keyframes denyut{50%{opacity:.35}}
+  @keyframes naikturun{from{transform:scaleX(.18)}to{transform:scaleX(.94)}}
+  @keyframes jalur{to{transform:translateX(-50%)}}
   @keyframes getar{
     10%,90%{transform:translateX(-2px)}
     20%,80%{transform:translateX(4px)}
@@ -238,27 +355,318 @@
     40%,60%{transform:translateX(7px)}
   }
 
+  /* ==================================================================
+     TIRAI SUKSES — 15 detik
+     ================================================================== */
+  .tirai{
+    position:fixed;inset:0;z-index:40;display:none;
+    grid-template-rows:auto 1fr auto;gap:12px;
+    padding:16px 20px 14px;
+    background:radial-gradient(ellipse at 50% 50%,rgba(6,20,16,.94),rgba(3,6,11,.99) 72%);
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  }
+  /* Butir halus yang sama seperti latar, supaya tirai terasa satu perangkat
+     dengan halaman di belakangnya, bukan lapisan yang ditempelkan begitu saja. */
+  .tirai::after{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(to bottom,
+      rgba(255,255,255,.02) 0 1px,transparent 1px 3px);
+  }
+  .tirai.tampil{display:grid;animation:masuk .5s ease-out}
+  /* Kop dan kaki tetap ada sejak detik nol. Layar yang kosong selama beberapa
+     detik pertama terbaca sebagai halaman yang belum jadi, bukan sebagai
+     animasi yang sedang berjalan. */
+  .tirai-kop,.tirai-kaki{
+    position:relative;z-index:1;
+    display:flex;align-items:center;gap:9px;
+    font:600 10px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-dim);
+  }
+  .tirai-kop .titik{
+    width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none;
+    box-shadow:0 0 8px var(--accent);animation:denyut 1.4s ease-in-out infinite;
+  }
+  .tirai-kop .kanan,.tirai-kaki .kanan{margin-left:auto;color:var(--ink-faint)}
+  .tirai-kaki .kanan{transition:opacity .4s;opacity:0}
+  .tirai-kaki .kanan.hidup{opacity:1}
+  .tirai-isi{
+    position:relative;z-index:1;align-self:center;
+    width:min(560px,100%);margin:0 auto;
+    display:grid;gap:13px;justify-items:center;text-align:center;
+  }
+  .cap{
+    margin:0;font:700 clamp(24px,7.5vw,40px)/1.05 var(--mono);
+    letter-spacing:.1em;text-transform:uppercase;color:var(--accent);
+    text-shadow:0 0 34px rgba(61,220,151,.5);
+    animation:cap-masuk .55s cubic-bezier(.2,.9,.25,1) both;
+  }
+  .cap.biru{color:var(--accent-2);text-shadow:0 0 34px rgba(56,189,248,.5)}
+  .cap.kuning{color:var(--warn);text-shadow:0 0 34px rgba(251,191,36,.5)}
+  .tirai .log{
+    margin:0;width:100%;padding:12px 14px;text-align:left;
+    /* Tinggi Maksimum, bukan minimum: lognya bertambah satu baris tiap beat,
+       dan tanpa batas ia akan mendorong bingkainya keluar layar di ponsel
+       pendek. Yang paling baru selalu di bawah (lihat logTambah). */
+    height:min(11em,32vh);
+    background:rgba(3,7,13,.7);border:1px solid var(--line);border-radius:10px;
+    font:12px/1.85 var(--mono);color:var(--ink-dim);
+    white-space:pre-wrap;word-break:break-word;overflow:hidden;
+  }
+  .tirai .log b{color:var(--accent);font-weight:600}
+  .tirai .log .kursor{
+    display:inline-block;width:7px;height:12px;vertical-align:-2px;
+    background:var(--accent);animation:kedip 1.05s steps(1) infinite;
+  }
+  /* Batang kemajuan. Lebarnya dijalankan lewat transisi CSS, bukan dihitung
+     ulang tiap bingkai — satu transisi 3 detik jauh lebih murah daripada
+     puluhan `setTimeout` yang menyetel lebar. */
+  .jalur{
+    width:100%;height:6px;border-radius:3px;background:rgba(120,170,220,.14);
+    overflow:hidden;visibility:hidden;
+  }
+  .jalur.hidup{visibility:visible}
+  .jalur i{
+    display:block;height:100%;width:0;
+    background:linear-gradient(90deg,var(--accent-2),var(--accent));
+    box-shadow:0 0 14px -2px var(--accent);
+    transition:width 3s cubic-bezier(.5,.05,.2,1);
+  }
+  .jalur.hidup i{width:100%}
+
+  /* Penanda fase. Bukan hiasan: ia benar-benar mengikuti posisi di dalam
+     TAHAP, jadi yang menonton tahu 15 detik ini sedang berada di bagian mana
+     dan berapa lagi sisanya. Tanpa ini, animasi panjang cuma terasa lambat. */
+  .fase{
+    display:flex;gap:0;margin:0;padding:0;list-style:none;width:100%;
+    font:600 9px/1 var(--mono);letter-spacing:.13em;text-transform:uppercase;
+    color:var(--ink-faint);
+  }
+  .fase li{
+    flex:1;padding-top:9px;border-top:2px solid rgba(120,170,220,.16);
+    transition:color .35s,border-color .35s;
+  }
+  .fase li.lewat{color:var(--ink-dim);border-top-color:rgba(120,170,220,.42)}
+  .fase li.kini{color:var(--accent);border-top-color:var(--accent)}
+
+  /* Gelombang suara: batang-batang CSS, bukan canvas. Kanvas butuh
+     `getContext("2d")` yang tidak ada di jsdom, jadi halamannya akan butuh
+     penjagaan khusus hanya demi hiasan. Batang CSS tidak butuh apa-apa. */
+  .gelombang{display:flex;align-items:flex-end;gap:3px;height:46px;width:100%}
+  .gelombang i{
+    flex:1;min-width:0;border-radius:2px;background:var(--accent-2);
+    transform-origin:50% 100%;height:100%;opacity:.7;
+    animation:puncak .62s ease-in-out infinite alternate;
+  }
+  @keyframes puncak{from{transform:scaleY(.14);opacity:.32}to{transform:scaleY(1);opacity:.85}}
+
+  /* Bidik. Selalu ada, tapi mulai dalam keadaan TERBUKA dan redup, lalu
+     menutup saat fasenya tiba. Slot setinggi penuhnya sejak awal supaya
+     tata letaknya tidak melompat saat ia mulai bergerak. */
+  .alat{display:grid;place-items:center;width:100%;height:124px}
+  .kunci-bidik{position:relative;width:124px;height:124px}
+  .kunci-bidik span{
+    position:absolute;width:26px;height:26px;border:2px solid var(--warn);
+    opacity:.22;transform:scale(1.28);
+    transition:transform 2.6s cubic-bezier(.5,.05,.2,1),opacity 2.6s;
+  }
+  .kunci-bidik span:nth-child(1){top:0;left:0;border-right:0;border-bottom:0;--dx:36px;--dy:36px}
+  .kunci-bidik span:nth-child(2){top:0;right:0;border-left:0;border-bottom:0;--dx:-36px;--dy:36px}
+  .kunci-bidik span:nth-child(3){bottom:0;left:0;border-right:0;border-top:0;--dx:36px;--dy:-36px}
+  .kunci-bidik span:nth-child(4){bottom:0;right:0;border-left:0;border-top:0;--dx:-36px;--dy:-36px}
+  .kunci-bidik.hidup span{transform:translate(var(--dx),var(--dy)) scale(1.55);opacity:1}
+  .kunci-bidik::after{
+    content:"";position:absolute;left:50%;top:50%;width:7px;height:7px;
+    margin:-3.5px 0 0 -3.5px;border-radius:50%;background:var(--warn);
+    box-shadow:0 0 16px var(--warn);opacity:.4;
+    animation:denyut 1.1s ease-in-out infinite;
+  }
+  .kunci-bidik.hidup::after{opacity:1}
+
+  .lewati{
+    font:600 10px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;
+    color:var(--ink-faint);
+  }
+  @keyframes masuk{from{opacity:0}to{opacity:1}}
+  @keyframes cap-masuk{
+    from{opacity:0;transform:scale(1.35);filter:blur(9px)}
+    to{opacity:1;transform:scale(1);filter:blur(0)}
+  }
+  /* Kilatan putih tepat sebelum peta dibuka. */
+  .kilat{
+    position:fixed;inset:0;z-index:41;background:#eafff5;opacity:0;pointer-events:none;
+  }
+  .kilat.hidup{animation:kilat .75s ease-out forwards}
+  @keyframes kilat{0%{opacity:0}22%{opacity:.92}100%{opacity:0}}
+
+  /* ==================================================================
+     TIRAI GAGAL
+     ================================================================== */
+  .alarm{
+    position:fixed;inset:0;z-index:45;display:none;place-items:center;padding:24px;
+    background:radial-gradient(ellipse at 50% 50%,rgba(40,6,8,.9),rgba(8,3,4,.97) 72%);
+    -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  }
+  .alarm.tampil{display:grid;animation:masuk .14s ease-out}
+  /* Seluruh layar bergetar sekali saat alarmnya muncul. */
+  .alarm.tampil .alarm-isi{animation:getar .42s cubic-bezier(.36,.07,.19,.97)}
+  /* Garis hazard di tepi atas dan bawah. */
+  .alarm::before,.alarm::after{
+    content:"";position:absolute;left:0;right:0;height:12px;
+    background:repeating-linear-gradient(45deg,
+      rgba(248,113,113,.85) 0 10px, rgba(30,8,10,.9) 10px 20px);
+    animation:hazard 1.1s linear infinite;
+  }
+  .alarm::before{top:0}
+  .alarm::after{bottom:0}
+  @keyframes hazard{to{background-position:28px 0}}
+
+  .alarm-isi{
+    width:min(520px,100%);display:grid;gap:13px;justify-items:center;text-align:center;
+  }
+  /* Segitiga peringatan digambar dengan CSS, bukan emoji: emoji tampil berbeda
+     di tiap sistem dan di beberapa di antaranya berwarna-warni, yang justru
+     merusak tampilan yang sedang dibuat serius. */
+  .alarm-ikon{
+    width:0;height:0;border-left:34px solid transparent;border-right:34px solid transparent;
+    border-bottom:58px solid var(--bad);
+    filter:drop-shadow(0 0 20px rgba(248,113,113,.7));
+    animation:denyut 1.1s ease-in-out infinite;position:relative;
+  }
+  .alarm-ikon::after{
+    content:"!";position:absolute;left:-3px;top:22px;
+    font:700 26px/1 var(--mono);color:#1a0507;
+  }
+  .alarm-judul{
+    position:relative;
+    font:700 clamp(25px,8vw,42px)/1.05 var(--mono);
+    letter-spacing:.09em;text-transform:uppercase;color:#fff;
+    text-shadow:0 0 30px rgba(248,113,113,.75);
+    animation:getar-judul 2.6s steps(1) infinite;
+  }
+  /* Glitch: dua salinan di belakang, satu merah satu biru, masing-masing
+     bergeser sendiri. `steps(1)` membuat pergeserannya melompat, bukan
+     mengalir — mengalir justru terlihat seperti animasi, bukan seperti sinyal
+     yang rusak. */
+  .alarm-judul::before,.alarm-judul::after{
+    content:attr(data-teks);position:absolute;inset:0;
+  }
+  .alarm-judul::before{color:var(--bad);animation:glitch-a 2.6s steps(1) infinite}
+  .alarm-judul::after{color:var(--accent-2);animation:glitch-b 2.6s steps(1) infinite}
+  @keyframes glitch-a{
+    0%,86%,100%{transform:none;opacity:0}
+    88%{transform:translate(-4px,1px);opacity:.9}
+    92%{transform:translate(3px,-2px);opacity:.7}
+  }
+  @keyframes glitch-b{
+    0%,86%,100%{transform:none;opacity:0}
+    90%{transform:translate(4px,-1px);opacity:.8}
+    94%{transform:translate(-3px,2px);opacity:.6}
+  }
+  @keyframes getar-judul{0%,92%,100%{transform:none}94%{transform:translateX(-5px)}96%{transform:translateX(5px)}}
+
+  .alarm-sub{
+    font:600 12px/1.5 var(--mono);letter-spacing:.3em;text-transform:uppercase;
+    color:var(--bad);
+  }
+  .alarm-log{
+    width:100%;margin:0;padding:11px 13px;text-align:left;
+    background:rgba(10,3,5,.8);border:1px solid rgba(248,113,113,.34);border-radius:9px;
+    font:11.5px/1.8 var(--mono);color:var(--ink-dim);
+    white-space:pre-wrap;word-break:break-word;
+  }
+  .alarm-log b{color:var(--bad)}
+  .alarm-tutup{
+    font:600 9.5px/1 var(--mono);letter-spacing:.18em;text-transform:uppercase;
+    color:var(--ink-faint);
+  }
+  /* Seluruh halaman ikut memerah selama alarmnya tampil. */
+  body.galat .radar{background:repeating-radial-gradient(circle at 50% 50%,rgba(248,113,113,.1) 0 1px,transparent 1px 7.5%)}
+  body.galat .sapuan{
+    background:conic-gradient(from 0deg,rgba(248,113,113,.26) 0deg,rgba(248,113,113,.07) 26deg,transparent 52deg,transparent 360deg);
+    animation-duration:1.5s;
+  }
+  body.galat .pindai{background:linear-gradient(to bottom,transparent,rgba(248,113,113,.05) 60%,rgba(248,113,113,.13));animation-duration:2.2s}
+  body.galat .kop .titik{background:var(--bad);box-shadow:0 0 8px var(--bad)}
+  body.terbuka .kop .titik{box-shadow:0 0 14px var(--accent)}
+
+  /* ------------------------------------------------- sempit / pendek */
+  /* Di bawah ini pita atas tidak cukup lebar untuk ticker DAN jam sekaligus;
+     yang tersisa cuma potongan kata yang menabrak jamnya. Ticker-nya yang
+     dibuang — jamnya menyampaikan sesuatu yang nyata, ticker-nya tidak. */
+  @media (max-width:560px){
+    .ticker{display:none}
+  }
   @media (max-width:400px){
     h1{font-size:22px}
     .digit{font-size:21px;border-radius:8px}
+    .tutup{font-size:21px}
     fieldset.kode{gap:6px}
-    .terminal{padding:18px 16px 14px}
+    .terminal{padding:17px 15px 13px}
     /* Barisnya harus tetap muat satu baris: yang membungkus menambah tinggi
        dan menggeser seluruh kartu. */
     .boot{font-size:10.5px}
   }
   /* Kurang tinggi (mis. ponsel mendatar): buang hiasan, sisakan yang dipakai. */
-  @media (max-height:560px){
+  @media (max-height:620px){
+    .telemetri{display:none}
+  }
+  @media (max-height:520px){
     .boot{display:none}
     .latar{opacity:.5}
   }
+  /* Tirai di layar pendek: yang dipotong isinya, bukan bingkainya. Kop, kaki,
+     dan penanda fasenya tetap ada — justru itu yang membuatnya terbaca
+     sebagai satu layar utuh, bukan sebagai tumpukan yang meluber. */
+  @media (max-height:700px){
+    .tirai .log{min-height:5.6em;font-size:11px}
+    .alat{height:86px}
+    .kunci-bidik,.kunci-bidik span{width:20px;height:20px}
+    .kunci-bidik{width:86px;height:86px}
+    .kunci-bidik span{--dx:25px;--dy:25px}
+    .kunci-bidik span:nth-child(2){--dx:-25px}
+    .kunci-bidik span:nth-child(3){--dy:-25px}
+    .kunci-bidik span:nth-child(4){--dx:-25px;--dy:-25px}
+    .gelombang{height:34px}
+  }
+  /* Layar lebar: rail kiri-kanan muncul, dan kartunya mengambang di tengah.
+     Rail-nya murni hiasan — tidak ada satu pun informasi yang hanya ada di
+     sana, jadi menghilangnya di layar sempit tidak menghilangkan apa pun. */
+  @media (min-width:900px){
+    .shell{grid-template-columns:132px minmax(0,470px) 132px;justify-content:center}
+    .strip{grid-column:1 / -1}
+    .rail{display:block;padding-top:8px;font:600 9px/1 var(--mono);
+      letter-spacing:.2em;text-transform:uppercase;color:var(--ink-faint)}
+    .rail .judul-rail{writing-mode:vertical-rl;text-orientation:mixed;height:190px;opacity:.65}
+    .hex{
+      height:230px;overflow:hidden;margin-top:10px;
+      -webkit-mask-image:linear-gradient(to bottom,transparent,#000 22%,#000 78%,transparent);
+              mask-image:linear-gradient(to bottom,transparent,#000 22%,#000 78%,transparent);
+    }
+    .hex div{display:grid;gap:3px;animation:naik 34s linear infinite}
+    .hex span{color:rgba(120,170,220,.42)}
+    @keyframes naik{from{transform:translateY(0)}to{transform:translateY(-50%)}}
+    .skala{display:grid;gap:9px;margin-top:10px}
+    .skala i{display:block;height:1px;background:var(--line);position:relative}
+    .skala i:nth-child(3n+1){width:100%}
+    .skala i:nth-child(3n+2){width:58%}
+    .skala i:nth-child(3n){width:76%}
+  }
 
-  /* Semua gerak di halaman ini hiasan. Yang memintanya berhenti, berhenti. */
+  /* Semua gerak di halaman ini hiasan. Yang memintanya berhenti, berhenti —
+     termasuk tirai 15 detiknya, yang langsung menuju akhir. */
   @media (prefers-reduced-motion:reduce){
-    .sapuan,.pindai,.kop .titik,.boot .kursor,
+    .sapuan,.pindai,.kop .titik,.boot .kursor,.ticker div,.tirai-kop .titik,
+    .telemetri .bar i,.gelombang i,.hex div,.alarm::before,.alarm::after,
+    .alarm-ikon,.alarm-judul,.alarm-judul::before,.alarm-judul::after,
+    .kunci-bidik::after,.tirai.tampil,.cap,.alarm.tampil .alarm-isi,
     fieldset.kode.salah{animation:none}
     .sapuan,.pindai{display:none}
     .boot .kursor{opacity:1}
+    .tirai .log .kursor{animation:none;opacity:1}
+    /* Tirai 15 detiknya sendiri tidak diputar sama sekali (lihat jalankanTirai),
+       tapi kalau ia sempat tampil sedetik, bidiknya jangan tertinggal terbuka. */
+    .kunci-bidik span{transform:translate(var(--dx),var(--dy)) scale(1.55);opacity:1}
+    .tirai-kaki .kanan{opacity:1}
     *{transition-duration:.01ms !important}
   }
 </style>
@@ -272,46 +680,126 @@
     <div class="butir"></div>
   </div>
 
-  <main class="terminal">
-    <div class="kop"><span class="titik"></span> Stasiun Pelacakan Kapal</div>
-
-    <h1>Akses Terbatas</h1>
-    <p class="bantu">Masukkan kode 6 digit untuk membuka peta pelacakan.</p>
-
-    <pre class="boot" id="boot" aria-hidden="true"></pre>
-
-    <form id="form" autocomplete="off" novalidate>
-      <fieldset class="kode" id="kode">
-        <legend>Kode akses, 6 digit</legend>
-        <!-- Enam kotak sungguhan, bukan satu kolom yang dipotong-potong CSS.
-             Masing-masing punya label sendiri supaya pembaca layar tetap bisa
-             menyebut posisinya. -->
-        <input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
-               maxlength="1" autocomplete="one-time-code" aria-label="Digit 1">
-        <input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
-               maxlength="1" aria-label="Digit 2">
-        <input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
-               maxlength="1" aria-label="Digit 3">
-        <input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
-               maxlength="1" aria-label="Digit 4">
-        <input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
-               maxlength="1" aria-label="Digit 5">
-        <input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
-               maxlength="1" aria-label="Digit 6">
-      </fieldset>
-
-      <button class="buka" id="buka" type="submit">
-        <span class="tanda">▸</span> Buka Akses
-      </button>
-
-      <div class="pesan" id="pesan" role="status" aria-live="polite"></div>
-    </form>
-
-    <div class="kaki">
-      <span class="nyala"><i></i> Terhubung</span>
-      <span id="jam">--:--:-- UTC</span>
+  <div class="shell">
+    <div class="strip" aria-hidden="true">
+      <span class="tag">Restricted</span>
+      <span class="ticker"><div>
+        <span>Authorized personnel only · Authorized personnel only · Authorized personnel only ·&nbsp;</span>
+        <span>Authorized personnel only · Authorized personnel only · Authorized personnel only ·&nbsp;</span>
+      </div></span>
+      <span class="waktu" id="jam">--:--:-- UTC</span>
     </div>
-  </main>
+
+    <aside class="rail" aria-hidden="true">
+      <div class="judul-rail">Sector 07 — North Atlantic</div>
+      <div class="hex" id="hex-kiri"></div>
+    </aside>
+
+    <main class="terminal">
+      <span class="siku a" aria-hidden="true"></span>
+      <span class="siku b" aria-hidden="true"></span>
+
+      <div class="kop">
+        <span class="titik"></span> Vessel Tracking Station
+        <span class="node">Node 07-AE</span>
+      </div>
+
+      <h1>Restricted Access</h1>
+      <p class="bantu">Enter the 6-digit access code to open the tracking map.</p>
+
+      <pre class="boot" id="boot" aria-hidden="true"></pre>
+
+      <form id="form" autocomplete="off" novalidate>
+        <fieldset class="kode" id="kode">
+          <legend>Access code, 6 digits</legend>
+          <!-- Enam kotak sungguhan, bukan satu kolom yang dipotong-potong CSS.
+               Masing-masing punya label sendiri supaya pembaca layar tetap bisa
+               menyebut posisinya. Topengnya hanya menyembunyikan dari mata —
+               nilai aslinya tetap ada di `input.value`, jadi pembaca layar
+               membacakan angkanya, bukan titiknya. -->
+          <label class="sel"><input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
+                 maxlength="1" autocomplete="one-time-code" aria-label="Digit 1"><span class="tutup" aria-hidden="true">•</span></label>
+          <label class="sel"><input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
+                 maxlength="1" aria-label="Digit 2"><span class="tutup" aria-hidden="true">•</span></label>
+          <label class="sel"><input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
+                 maxlength="1" aria-label="Digit 3"><span class="tutup" aria-hidden="true">•</span></label>
+          <label class="sel"><input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
+                 maxlength="1" aria-label="Digit 4"><span class="tutup" aria-hidden="true">•</span></label>
+          <label class="sel"><input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
+                 maxlength="1" aria-label="Digit 5"><span class="tutup" aria-hidden="true">•</span></label>
+          <label class="sel"><input class="digit" type="text" inputmode="numeric" pattern="[0-9]*"
+                 maxlength="1" aria-label="Digit 6"><span class="tutup" aria-hidden="true">•</span></label>
+        </fieldset>
+
+        <button class="buka" id="buka" type="submit">
+          <span class="tanda">▸</span> Unlock Access
+        </button>
+
+        <div class="pesan" id="pesan" role="status" aria-live="polite"></div>
+      </form>
+
+      <div class="telemetri" aria-hidden="true">
+        <span>Uplink</span>   <span class="bar"><i class="b1"></i></span> <span class="status">Active</span>
+        <span>Array</span>    <span class="bar"><i class="b2"></i></span> <span class="status">Ready</span>
+        <span>Relay</span>    <span class="bar"><i class="b3"></i></span> <span class="status">Linked</span>
+        <span>Buffer</span>   <span class="bar"><i class="b4"></i></span> <span class="status">Clear</span>
+      </div>
+
+      <div class="kaki">
+        <span class="nyala"><i></i> Link Established</span>
+        <span id="sesi">Session —</span>
+      </div>
+    </main>
+
+    <aside class="rail" aria-hidden="true">
+      <div class="skala">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        <i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ============================================================ sukses -->
+  <div class="tirai" id="sukses" aria-hidden="true">
+    <div class="tirai-kop">
+      <span class="titik"></span> Access Sequence
+      <span class="kanan">Node 07-AE</span>
+    </div>
+
+    <div class="tirai-isi">
+      <p class="cap" id="cap">Access Granted</p>
+      <pre class="log" id="log-sukses"></pre>
+      <div class="alat" aria-hidden="true">
+        <div class="kunci-bidik" id="bidik"><span></span><span></span><span></span><span></span></div>
+      </div>
+      <div class="gelombang" id="gelombang" aria-hidden="true"></div>
+      <div class="jalur" id="jalur" aria-hidden="true"><i></i></div>
+      <ol class="fase" id="fase" aria-hidden="true">
+        <li>Verify</li>
+        <li>Decrypt</li>
+        <li>Uplink</li>
+        <li>Lock</li>
+        <li>Enter</li>
+      </ol>
+    </div>
+
+    <div class="tirai-kaki">
+      <span class="num" id="tirai-jam">T+00.0</span>
+      <span class="kanan" id="lewati">Press any key to skip</span>
+    </div>
+  </div>
+  <div class="kilat" id="kilat" aria-hidden="true"></div>
+
+  <!-- ============================================================= gagal -->
+  <div class="alarm" id="alarm" role="alert" aria-live="assertive">
+    <div class="alarm-isi">
+      <div class="alarm-ikon" aria-hidden="true"></div>
+      <div class="alarm-judul" id="alarm-judul" data-teks="Access Denied">Access Denied</div>
+      <div class="alarm-sub">Invalid Access Code</div>
+      <pre class="alarm-log" id="alarm-log"></pre>
+      <div class="alarm-tutup">Click anywhere to dismiss</div>
+    </div>
+  </div>
 
 <script>
 (function () {
@@ -324,8 +812,12 @@
   var pesan = document.getElementById("pesan");
   var jam   = document.getElementById("jam");
   var boot  = document.getElementById("boot");
+  var sesi  = document.getElementById("sesi");
   var N     = butir.length;
   var sedang = false;
+
+  // Berapa lama kode yang baru diketik masih terlihat sebelum jadi titik.
+  var SINGKAP = 650;
 
   function kode() {
     var s = "";
@@ -340,14 +832,43 @@
   }
 
   function bersihkan() {
-    for (var i = 0; i < N; i++) { butir[i].value = ""; butir[i].classList.remove("isi"); }
+    for (var i = 0; i < N; i++) {
+      butir[i].value = "";
+      // Timer singkapnya ikut dimatikan. Kalau tidak, timer lama masih menyala
+      // dan mencabut topeng kotak yang sudah dikosongkan — hasilnya satu kotak
+      // kosong yang tiba-tiba berkedip.
+      var sel = butir[i].parentNode;
+      clearTimeout(sel._t);
+      sel.classList.remove("buka");
+    }
     dokumenter();
     grup.classList.remove("salah");
     butir[0].focus();
   }
 
+  // Menyembunyikan angka yang sudah diketik. Dipanggil dari SATU tempat saja
+  // supaya keadaan topeng tidak pernah bisa berbeda dari isi kotaknya.
   function dokumenter() {
-    for (var i = 0; i < N; i++) butir[i].classList.toggle("isi", butir[i].value !== "");
+    for (var i = 0; i < N; i++) {
+      var el = butir[i], sel = el.parentNode;
+      var ada = el.value !== "";
+      // Baru saja terisi -> perlihatkan sebentar. Urutannya penting: `isi`
+      // diperiksa SEBELUM di-toggle, kalau tidak setiap pemanggilan berikutnya
+      // dianggap pengisian baru dan topengnya tidak pernah menutup.
+      if (ada && !el.classList.contains("isi")) singkap(sel);
+      el.classList.toggle("isi", ada);
+      if (!ada) { clearTimeout(sel._t); sel.classList.remove("buka"); }
+      sel.classList.toggle("topeng", ada && !sel.classList.contains("buka"));
+    }
+  }
+
+  function singkap(sel) {
+    sel.classList.add("buka");
+    clearTimeout(sel._t);
+    sel._t = setTimeout(function () {
+      sel.classList.remove("buka");
+      dokumenter();
+    }, SINGKAP);
   }
 
   // Hanya angka. Menyaring di sini, bukan di `maxlength` saja, karena
@@ -362,16 +883,44 @@
   // ---------------------------------------------------------- 1. jam
   // Jam UTC sungguhan, bukan angka berjalan yang dikarang. Detiknya sengaja
   // ikut: itulah yang membuat terminal terasa hidup.
+  var mulai = Date.now();
+  function dua(n) { return (n < 10 ? "0" : "") + n; }
   function jamnya() {
     var d = new Date();
-    var p = function (n) { return (n < 10 ? "0" : "") + n; };
-    jam.textContent = p(d.getUTCHours()) + ":" + p(d.getUTCMinutes()) + ":" +
-                      p(d.getUTCSeconds()) + " UTC";
+    jam.textContent = dua(d.getUTCHours()) + ":" + dua(d.getUTCMinutes()) + ":" +
+                      dua(d.getUTCSeconds()) + " UTC";
   }
   jamnya();
   setInterval(jamnya, 1000);
 
-  // ---------------------------------------------------------- 2. log boot
+  // Lama sesi: juga angka nyata — waktu sejak halaman ini dibuka.
+  function sesinya() {
+    var s = Math.floor((Date.now() - mulai) / 1000);
+    sesi.textContent = "Session " + dua(Math.floor(s / 60)) + ":" + dua(s % 60);
+  }
+  sesinya();
+  setInterval(sesinya, 1000);
+
+  // ---------------------------------------------------------- 2. aliran hex
+  // Hiasan di rail kiri. Sengaja TIDAK diberi label apa pun yang menyiratkan
+  // ia sedang membaca sesuatu — ia cuma deretan heksadesimal yang bergerak.
+  var hexKiri = document.getElementById("hex-kiri");
+  if (hexKiri) {
+    var barisHex = [];
+    for (var h = 0; h < 44; h++) {
+      var potong = [];
+      for (var j = 0; j < 4; j++) {
+        potong.push(("0000" + Math.floor(Math.random() * 65536).toString(16)).slice(-4));
+      }
+      barisHex.push("<span>" + potong.join(" ") + "</span>");
+    }
+    // Dua salinan: animasinya menggeser tepat setengah tinggi, jadi salinan
+    // kedua sudah berdiri di tempat salinan pertama bermula saat ulangannya
+    // kembali ke awal — tanpa itu akan ada lompatan yang terlihat.
+    hexKiri.innerHTML = "<div>" + barisHex.join("") + barisHex.join("") + "</div>";
+  }
+
+  // ---------------------------------------------------------- 3. log boot
   // Hiasan saja — formulirnya sudah bisa dipakai sejak detik pertama. Menahan
   // input demi animasi pembuka itu ide yang buruk: yang sudah tahu kodenya
   // hanya dibuat menunggu.
@@ -381,8 +930,9 @@
   // tengah teks yang sedang dipotong per karakter akan mencetak "<b>akti" apa
   // adanya di layar.
   var BARIS = [
-    { a: "menghubungkan ke stasiun…" },
-    { a: "kanal terenkripsi ", b: "aktif" }
+    { a: "linking to station ", b: "07-AE", c: "…" },
+    { a: "channel established — cipher ", b: "negotiated" },
+    { a: "telemetry ", b: "streaming" }
   ];
   var diam = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -397,7 +947,7 @@
   }
 
   function bootSelesai() {
-    boot.innerHTML = BARIS.map(berwarna).join("\n") + "\n<b>menunggu kode</b>";
+    boot.innerHTML = BARIS.map(berwarna).join("\n") + "\n<b>awaiting access code</b>";
   }
 
   if (diam) {
@@ -413,7 +963,7 @@
         // ditambahkan kalau memang sudah ada isinya.
         html += (html ? "\n" : "") + esc(polos(BARIS[iBaris]).slice(0, nChar));
       } else {
-        html += "\n<b>menunggu kode</b> ";
+        html += "\n<b>awaiting access code</b> ";
       }
       boot.innerHTML = html + "<span class='kursor'></span>";
     };
@@ -432,11 +982,11 @@
       iBaris++;
       nChar = 0;
       gambar();
-      setTimeout(langkah, 120);
+      setTimeout(langkah, 130);
     })();
   }
 
-  // ---------------------------------------------------------- 3. kotak digit
+  // ---------------------------------------------------------- 4. kotak digit
   for (var i = 0; i < N; i++) {
     (function (i) {
       var el = butir[i];
@@ -498,16 +1048,211 @@
     if (kode().length === N) kirim();
   }
 
-  // ---------------------------------------------------------- 4. kirim
+  // ==================================================== TIRAI SUKSES (15 dtk)
+  //
+  // Seluruh 15 detiknya adalah daftar di bawah ini, bukan rangkaian
+  // `setTimeout` bertingkat. Dengan daftar, urutannya bisa diperiksa mata
+  // sekaligus diuji sebagai data — dan satu tempat untuk mengubah tempo.
+  //
+  // `at` dalam milidetik sejak tirai muncul. `akhir` menutup tirai dan
+  // memindahkan halaman; angka terakhir WAJIB sama dengan LAMA.
+  var LAMA = 15000;
+  // Lima fase. `fase` menandai tahap pertama tiap bagian; penanda di layar
+  // mengikuti ini, jadi yang menonton tahu 15 detik ini sedang di bagian mana.
+  var FASE = ["Verify", "Decrypt", "Uplink", "Lock", "Enter"];
+  var TAHAP = [
+    { at: 0,     fase: 0, cap: "Access Granted",   kelas: "" },
+    { at: 260,   log: "sequence ......... initiated" },
+    { at: 900,   log: "identity ......... operator" },
+    { at: 2300,  log: "clearance ........ level 4" },
+    { at: 3100,  log: "node ............. 07-AE" },
+    { at: 4000,  fase: 1, cap: "Decrypting Tileset", kelas: "biru" },
+    { at: 4100,  jalur: true },
+    { at: 4500,  log: "tiles ........... chart/coastline" },
+    { at: 5300,  log: "tiles ........... chart/depth" },
+    { at: 6100,  log: "tiles ........... vessels/live" },
+    { at: 7100,  fase: 2, cap: "Acquiring Uplink", kelas: "biru" },
+    { at: 7600,  log: "handshake ....... complete" },
+    { at: 8600,  log: "carrier ......... locked" },
+    { at: 10100, fase: 3, cap: "Vector Lock",      kelas: "kuning" },
+    { at: 10200, bidik: true },
+    { at: 11200, log: "range ........... nominal" },
+    { at: 12200, log: "target .......... resolved" },
+    { at: 13400, fase: 4, cap: "Entering",         kelas: "" },
+    { at: 14300, kilat: true },
+    { at: 15000, akhir: true }
+  ];
+
+  var tirai   = document.getElementById("sukses");
+  var cap     = document.getElementById("cap");
+  var logS    = document.getElementById("log-sukses");
+  var jalur   = document.getElementById("jalur");
+  var gelombang = document.getElementById("gelombang");
+  var bidik   = document.getElementById("bidik");
+  var lewati  = document.getElementById("lewati");
+  var kilat   = document.getElementById("kilat");
+  var tiraiJam = document.getElementById("tirai-jam");
+  var daftarFase = document.getElementById("fase").children;
+  var barisLog = [];
+  var pewaktu = [];
+  var jamTirai = null;
+  var sudahLewat = false;
+
+  // Gelombangnya dibuat dari JS supaya jumlah batangnya bisa dihitung dari
+  // lebar layar — di ponsel 40 batang hanya jadi bubur.
+  if (gelombang) {
+    var nBatang = Math.max(16, Math.min(36, Math.floor((window.innerWidth || 360) / 16)));
+    var htmlBatang = "";
+    for (var g = 0; g < nBatang; g++) {
+      htmlBatang += "<i style='animation-delay:-" + (g * 0.07).toFixed(2) + "s'></i>";
+    }
+    gelombang.innerHTML = htmlBatang;
+  }
+
+  function logTambah(teks) {
+    barisLog.push("<b>›</b> " + esc(teks));
+    logS.innerHTML = barisLog.join("\n") + "<span class='kursor'></span>";
+    // Kotaknya berhenti tumbuh setelah 11 baris, jadi yang terbaru harus
+    // digulirkan ke bawah sendiri — kalau tidak, baris yang baru masuk justru
+    // yang tersembunyi dan yang terbaca malah baris paling lama.
+    logS.scrollTop = logS.scrollHeight;
+  }
+
+  function faseKe(n) {
+    for (var f = 0; f < daftarFase.length; f++) {
+      daftarFase[f].className = f < n ? "lewat" : (f === n ? "kini" : "");
+    }
+  }
+
+  function tiraiTutup() {
+    tirai.classList.remove("tampil");
+    document.body.classList.remove("terbuka");
+    clearInterval(jamTirai);
+    jamTirai = null;
+  }
+
+  function kePeta() {
+    if (sudahLewat) return;
+    sudahLewat = true;
+    for (var k = 0; k < pewaktu.length; k++) clearTimeout(pewaktu[k]);
+    pewaktu = [];
+    // replace, bukan href: halaman kunci tidak perlu ikut menumpuk di
+    // riwayat, supaya tombol "kembali" tidak memantul ke sini lagi.
+    location.replace("/");
+  }
+
+  function lewatiTirai() {
+    if (!tirai.classList.contains("tampil")) return;
+    tiraiTutup();
+    kePeta();
+  }
+
+  function jalankanTirai() {
+    tirai.classList.add("tampil");
+    logS.innerHTML = "";
+    barisLog = [];
+    jalur.classList.remove("hidup");
+    bidik.classList.remove("hidup");
+    lewati.classList.remove("hidup");
+    // Dalam mode gerak-diminta-berhenti, seluruh 15 detiknya dilompati. Yang
+    // meminta animasi berhenti tidak boleh malah dipaksa menonton 15 detik.
+    if (diam) { tiraiTutup(); kePeta(); return; }
+
+    // Penghitung waktu sejak tirai terbuka. Angka ini NYATA — ia mengukur
+    // berapa lama yang menonton sudah menunggu, bukan angka yang dikarang
+    // untuk mengisi layar.
+    var mulaiTirai = Date.now();
+    jamTirai = setInterval(function () {
+      var s = (Date.now() - mulaiTirai) / 1000;
+      tiraiJam.textContent = "T+" + (s < 10 ? "0" : "") + s.toFixed(1);
+    }, 100);
+
+    for (var k = 0; k < TAHAP.length; k++) {
+      (function (t) {
+        pewaktu.push(setTimeout(function () {
+          if (t.fase !== undefined) faseKe(t.fase);
+          if (t.cap !== undefined) {
+            cap.textContent = t.cap;
+            cap.className = "cap" + (t.kelas ? " " + t.kelas : "");
+          }
+          if (t.log) logTambah(t.log);
+          if (t.jalur) jalur.classList.add("hidup");
+          if (t.bidik) bidik.classList.add("hidup");
+          if (t.kilat) kilat.classList.add("hidup");
+          if (t.akhir) kePeta();
+        }, t.at));
+      })(TAHAP[k]);
+    }
+    // Petunjuk lewatinya baru muncul setelah beberapa detik: kalau muncul
+    // sejak detik nol, yang pertama terbaca justru "cara keluar dari ini".
+    pewaktu.push(setTimeout(function () { lewati.classList.add("hidup"); }, 3000));
+  }
+
+  // Lewati: klik di mana saja, atau tombol apa pun. Ini ditambahkan justru
+  // karena 15 detik itu lama — dan yang membukanya berulang kali akan
+  // memakainya setiap kali.
+  //
+  // Kombinasi dengan Ctrl/Cmd/Alt SENGAJA tidak ikut dimakan: menekan Ctrl+R
+  // di tengah animasi harus tetap memuat ulang halaman, bukan malah melompati
+  // animasinya.
+  function tombolMurni(ev) { return !ev.ctrlKey && !ev.metaKey && !ev.altKey; }
+
+  tirai.addEventListener("click", lewatiTirai);
+  document.addEventListener("click", function () {
+    if (tirai.classList.contains("tampil")) lewatiTirai();
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (tirai.classList.contains("tampil") && tombolMurni(ev)) {
+      ev.preventDefault();
+      lewatiTirai();
+    }
+  });
+
+  // ==================================================== TIRAI GAGAL
+  var alarm    = document.getElementById("alarm");
+  var alarmLog = document.getElementById("alarm-log");
+  var percobaan = 0;
+  var timerAlarm = null;
+
+  function alarmTutup() {
+    clearTimeout(timerAlarm);
+    alarm.classList.remove("tampil");
+  }
+
+  function alarmBuka() {
+    percobaan++;
+    alarmLog.innerHTML =
+      "> access ........... <b>DENIED</b>\n" +
+      "> code ............. invalid\n" +
+      "> attempt .......... <b>" + percobaan + "</b>";
+    alarm.classList.add("tampil");
+    clearTimeout(timerAlarm);
+    // Menutup sendiri. Alarm yang menunggu diklik akan mengunci orang di luar
+    // hanya karena ia tidak tahu harus mengklik apa.
+    timerAlarm = setTimeout(alarmTutup, 2600);
+  }
+
+  alarm.addEventListener("click", alarmTutup);
+  document.addEventListener("keydown", function (ev) {
+    if (alarm.classList.contains("tampil") && tombolMurni(ev)) {
+      ev.preventDefault();
+      alarmTutup();
+    }
+  });
+
+  // ---------------------------------------------------------- 5. kirim
   function kirim() {
     if (sedang) return;                       // dua kali tekan = satu permintaan
     var isi = kode();
-    if (!isi) { tulis("Kodenya masih kosong."); fokusKe(0); return; }
-    if (isi.length < N) { tulis("Kodenya kurang " + (N - isi.length) + " digit."); return; }
+    if (!isi) { tulis("Access code is still empty.", "info"); fokusKe(0); return; }
+    if (isi.length < N) {
+      tulis("Access code is " + (N - isi.length) + " digits short.", "info");
+      return;
+    }
 
     sedang = true;
     buka.disabled = true;
-    tulis("memverifikasi…", "info");
+    tulis("verifying…", "info");
 
     // Kodenya dikirim di BODY, bukan di query string: query string ikut
     // tercatat di log akses Vercel dan mampir ke riwayat peramban.
@@ -523,25 +1268,23 @@
     }).then(function (hasil) {
       if (hasil.status === 200 && hasil.data && hasil.data.ok) {
         document.body.classList.add("terbuka");
-        tulis("akses diterima — membuka peta…", "terbuka");
+        tulis("access granted — opening map…", "terbuka");
         buka.disabled = true;
-        // replace, bukan href: halaman kunci tidak perlu ikut menumpuk di
-        // riwayat, supaya tombol "kembali" tidak memantul ke sini lagi.
-        setTimeout(function () { location.replace("/"); }, diam ? 0 : 550);
+        jalankanTirai();
         return;
       }
       sedang = false;
       buka.disabled = false;
       if (hasil.status === 429) {
         bersihkan();
-        tulis("terlalu banyak percobaan — tunggu sebentar", "ingat");
+        tulis("too many attempts — wait a moment", "ingat");
       } else if (hasil.status === 500) {
         // Sebabnya hampir selalu env yang belum diatur di Vercel. Pesannya
         // datang dari server dan sengaja ditampilkan apa adanya, karena kalau
         // disembunyikan gejalanya cuma "kode yang benar ditolak".
         tulis(hasil.data && hasil.data.error
           ? hasil.data.error
-          : "server belum siap — periksa Environment Variables", "ingat");
+          : "server not ready — check Environment Variables", "ingat");
       } else {
         // URUTANNYA PENTING. `bersihkan()` menghapus kelas `salah`, jadi
         // menambahkannya lebih dulu membuat getarannya ditambahkan lalu dicabut
@@ -552,12 +1295,13 @@
         // tidak ada perubahan, dan kode salah yang kedua kali tidak bergetar.
         void grup.offsetWidth;
         grup.classList.add("salah");
-        tulis("akses ditolak — kode salah", "galat");
+        tulis("access denied — wrong code", "galat");
+        alarmBuka();
       }
     }).catch(function () {
       sedang = false;
       buka.disabled = false;
-      tulis("tidak bisa menghubungi server — periksa koneksi", "ingat");
+      tulis("cannot reach server — check your connection", "ingat");
     });
   }
 
@@ -567,6 +1311,14 @@
   // (terutama peramban dalam aplikasi, dan saat halaman dipulihkan dari cache)
   // mengabaikannya, dan pengguna lalu harus menyentuh kolomnya dulu.
   butir[0].focus();
+
+  // Dipakai oleh /tmp/uji_kunci_html.js dan oleh skrip pratinjau. Halaman ini
+  // tidak punya rahasia di sisi peramban — gerbangnya ada di cookie dan
+  // middleware — jadi membuka ini tidak melemahkan apa pun.
+  window.__gerbang = {
+    lama: LAMA, tahap: TAHAP, mulai: jalankanTirai, lewati: lewatiTirai,
+    percobaan: function () { return percobaan; }
+  };
 })();
 </script>
 </body>
