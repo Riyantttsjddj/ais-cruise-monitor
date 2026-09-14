@@ -292,9 +292,19 @@ MyShipTracking.
 diagonal **"API KEY REQUIRED"**, dan karena lapisan itu yang pertama terbuka,
 tulisan itulah yang langsung terlihat. Cermin lamanya di fastly **tidak
 menolong** — berkasnya identik bit-per-bit (md5 sama). Canvas gelap Esri datang
-dari host yang sama dengan lapisan satelit dan ubinnya bersih. Atribusi
-"Esri, HERE, Garmin, © OpenStreetMap contributors" ada di base-nya dan wajib
-dipertahankan.
+dari host yang sama dengan lapisan satelit dan ubinnya bersih.
+
+> **Atribusi dihapus — dan itu melanggar ketentuan penyedianya.** Ubin
+> OpenStreetMap (lisensi ODbL) dan Esri sama-sama **mewajibkan** kredit yang
+> tampil di layar; kredit itu dulu memang terpasang. Atas permintaan pengguna
+> (14 Sep 2026) seluruh kotak atribusi dibuang: `attributionControl: false` di
+> `index.html` dan tidak ada satu pun kunci `attribution:` di ketiga lapisan.
+> Konsekuensinya nyata — Esri bisa memblokir host-nya dan OSM bisa memblokir
+> `tile.openstreetmap.org`, yang berarti peta ini berhenti tampil sama sekali.
+> **Kalau ubinnya suatu saat mati mendadak, curigai ini lebih dulu**, sebelum
+> menelusuri kode. `/tmp/uji_ubin.js` bagian 5 sengaja menuntut atribusi
+> **tidak** ada, jadi mengembalikannya akan membuat uji itu gagal — itu
+> disengaja, bukan kerusakan uji.
 
 **Lapisan nama tempat** (`Reference/World_Boundaries_and_Places`) dipasang di
 atas **kedua** lapisan Esri, sebagai lapisan kedua di dalam satu `L.layerGroup`.
@@ -384,8 +394,8 @@ yang bisa dibuka-tutup:
 - Tombol zoom dan skala bawaan Leaflet **dibuang** di ponsel — layarnya
   sempit dan pinch-to-zoom sudah tersedia. Keduanya dipasang lagi otomatis
   kalau jendela diperbesar atau ponsel diputar ke mode lanskap.
-- Atribusi peta (syarat lisensi OpenStreetMap/Esri) diangkat ke atas lembar
-  bawah supaya tetap terbaca.
+- Kotak atribusi peta **tidak ada sama sekali** (lihat catatan di bagian
+  lapisan peta), jadi sudut kanan-bawah di ponsel kini benar-benar kosong.
 - Sasaran sentuh diperbesar: tombol lebih tinggi, baris data lebih lega.
 
 Perubahan ukuran jendela ditangani otomatis (diredam 250 ms) — tidak perlu

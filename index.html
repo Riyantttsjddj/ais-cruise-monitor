@@ -32,11 +32,6 @@
 
   #map{position:absolute;inset:0;background:#0a1220;z-index:0}
   .leaflet-container{background:#0a1220;font:inherit}
-  .leaflet-control-attribution{
-    background:rgba(7,13,22,.72)!important;color:#7f9ab8!important;font-size:10px!important;
-    backdrop-filter:blur(6px)
-  }
-  .leaflet-control-attribution a{color:#9db8d6!important}
   .leaflet-bar a{
     background:var(--panel-solid)!important;color:var(--ink)!important;border-color:var(--line)!important
   }
@@ -411,12 +406,6 @@
     }
     #panel:not(.collapsed) ~ #toast{bottom:calc(min(64vh,100% - 150px) + 16px)}
 
-    /* Atribusi peta wajib tampil (syarat lisensi OSM/Esri) — diangkat supaya
-       tidak tertutup lembar bawah. Di ponsel zoom/scale sudah dibuang, jadi
-       sudut kanan-bawah hanya berisi atribusi. */
-    .leaflet-bottom.leaflet-right{bottom:calc(var(--sheet-h) + 8px)}
-    .leaflet-control-attribution{font-size:9px!important}
-
     /* Kotak tambah kapal jadi lembar penuh, sejalan dengan pola #panel. */
     #addbox, #limitbox{padding:0;align-items:flex-end}
     .addbox-card{
@@ -580,9 +569,15 @@
   // terkininya tanpa biaya penuhnya.
   var TRAIL_MAX_LAIN = 400;
 
+  // TANPA ATRIBUSI — ini disengaja, bukan kelalaian. Ubin OpenStreetMap (ODbL)
+  // dan Esri sama-sama MEWAJIBKAN kredit yang tampil di layar; menghapusnya
+  // berarti memakai layanan mereka di luar ketentuan (Esri bisa memblokir
+  // host-nya, OSM bisa memblokir tile.openstreetmap.org). Pengguna sudah
+  // diberi tahu konsekuensi itu dan memilih tetap menghapus (14 Sep 2026).
+  // JANGAN menambahkan kembali `attribution:` tanpa bertanya dulu.
   var LAYERS = {
     "Peta": L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: "&copy; OpenStreetMap"
+      maxZoom: 19
     }),
     // Citra satelit Esri + lapisan nama tempatnya. Tanpa lapisan kedua itu,
     // "Satelit" tidak punya satu pun nama tempat di zoom berapa pun — citranya
@@ -590,7 +585,7 @@
     "Satelit": L.layerGroup([
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        { maxZoom: 19, attribution: "Esri, Maxar, Earthstar Geographics" }
+        { maxZoom: 19 }
       ),
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
@@ -616,8 +611,7 @@
     "Gelap": L.layerGroup([
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-        { maxZoom: 20,
-          attribution: "Esri, HERE, Garmin, &copy; OpenStreetMap contributors" }
+        { maxZoom: 20 }
       ),
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
@@ -627,7 +621,11 @@
   };
   var layerNames = Object.keys(LAYERS);
 
-  var map = L.map("map", { zoomControl: false, attributionControl: true, worldCopyJump: true })
+  // `attributionControl:false` membuang seluruh kotak atribusi — bukan cuma
+  // kredit Esri/OSM, tapi juga awalan "Leaflet" bawaan Leaflet (yang memang
+  // tidak diwajibkan lisensi BSD-nya). Tanpa ini, kotak kosongnya masih
+  // meninggalkan sisa kepingan di sudut kanan-bawah.
+  var map = L.map("map", { zoomControl: false, attributionControl: false, worldCopyJump: true })
              .setView([25.5, -78.5], 6);
   LAYERS["Gelap"].addTo(map);
 
