@@ -131,13 +131,6 @@
     font-size:11px;text-transform:uppercase;letter-spacing:1.3px;color:var(--ink-dim);
     margin:16px 0 8px;font-weight:700
   }
-  .links{display:flex;flex-wrap:wrap;gap:7px}
-  .links a{
-    flex:1 1 auto;text-align:center;text-decoration:none;color:var(--ink);
-    padding:8px 10px;border-radius:10px;font-size:12px;font-weight:600;
-    background:rgba(120,170,220,.09);border:1px solid var(--line)
-  }
-  .links a:hover{background:rgba(120,170,220,.2)}
 
   /* ----------------------------------------------------------- daftar kapal */
   .fleet{display:flex;flex-direction:column;gap:6px}
@@ -174,15 +167,15 @@
   #add-btn{width:100%;justify-content:center;margin-top:8px;text-align:center}
 
   /* --------------------------------------------------------- tambah kapal */
-  /* Satu aturan untuk dua kotak (#addbox dan #limitbox): kerangkanya sama,
-     isinya yang beda. Menyalin blok ini untuk kotak kedua berarti tiap
-     perbaikan tata letak harus dikerjakan dua kali. */
-  #addbox, #limitbox{
+  /* Satu aturan untuk tiga kotak (#addbox, #limitbox, #jadwalbox):
+     kerangkanya sama, isinya yang beda. Menyalin blok ini untuk tiap kotak
+     berarti tiap perbaikan tata letak harus dikerjakan berkali-kali. */
+  #addbox, #limitbox, #jadwalbox{
     position:fixed;inset:0;z-index:900;display:none;padding:20px;
     align-items:center;justify-content:center;
     background:rgba(4,10,16,.6);backdrop-filter:blur(3px)
   }
-  #addbox.show, #limitbox.show{display:flex}
+  #addbox.show, #limitbox.show, #jadwalbox.show{display:flex}
   .addbox-card{
     width:min(560px,100%);max-height:86vh;display:flex;flex-direction:column;
     background:var(--panel-solid);border:1px solid var(--line);border-radius:16px;
@@ -205,6 +198,57 @@
     background:rgba(8,16,24,.7);border:1px solid var(--line);color:var(--ink)
   }
   #addbox input:focus, #limitbox input:focus{outline:none;border-color:var(--accent)}
+
+  /* ------------------------------------------------------ kartu jadwal */
+  /* Kartu ini isinya tabel, bukan daftar panjang, jadi barisnya dirapatkan
+     dan angkanya dibuat rata kolom (tabular-nums) supaya jam dan harga bisa
+     dibandingkan lurus ke bawah. */
+  .jd-blok{margin-bottom:16px}
+  .jd-blok:last-child{margin-bottom:0}
+  .jd-judul{
+    font-size:11px;text-transform:uppercase;letter-spacing:1.3px;
+    color:var(--ink-dim);font-weight:700;margin-bottom:7px
+  }
+  .jd-pair{
+    display:flex;gap:10px;padding:6px 0;border-bottom:1px solid rgba(120,170,220,.09);
+    font-size:12.5px;align-items:baseline
+  }
+  .jd-pair:last-child{border-bottom:0}
+  .jd-k{flex:0 0 108px;color:var(--ink-dim);font-size:11.5px}
+  .jd-v{flex:1;min-width:0;word-break:break-word}
+  .jd-chipline{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:650}
+  .jd-swatch{
+    width:11px;height:11px;border-radius:50%;flex:0 0 auto;
+    border:1px solid rgba(255,255,255,.28)
+  }
+  .jd-laut{
+    font-size:12.5px;line-height:1.5;color:var(--ink);
+    padding:9px 11px;border-radius:10px;margin-bottom:9px;
+    background:rgba(120,170,220,.08);border:1px solid var(--line)
+  }
+  .jd-tabel{display:flex;flex-direction:column;font-variant-numeric:tabular-nums}
+  .jd-baris{
+    display:flex;gap:10px;padding:7px 0;font-size:12.5px;
+    border-bottom:1px solid rgba(120,170,220,.09);align-items:baseline
+  }
+  .jd-baris:last-child{border-bottom:0}
+  .jd-tanggal{flex:0 0 86px;color:var(--ink-dim);font-size:11.5px}
+  .jd-isi{flex:1;min-width:0}
+  .jd-pelabuhan{flex:0 0 92px;color:var(--ink-dim);font-size:11.5px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .jd-harga{flex:0 0 54px;text-align:right;font-size:11.5px;color:var(--ink-dim)}
+  .jd-kaki{
+    margin-top:14px;padding-top:11px;border-top:1px solid var(--line);
+    font-size:11px;color:var(--ink-dim);line-height:1.5
+  }
+  .jd-kaki a{color:var(--ink-dim)}
+  @media (max-width:520px){
+    /* Di layar sempit kolom pelabuhan & harga dibuang lebih dulu — tanggal dan
+       isi pelayarannya yang paling penting, dan keduanya masih terbaca tanpa
+       dua kolom itu. */
+    .jd-pelabuhan, .jd-harga{display:none}
+    .jd-k{flex-basis:88px}
+  }
   /* --------------------------------------------------------- atur batas */
   #fleet-count{
     border:0;padding:2px 8px;border-radius:999px;cursor:pointer;font:inherit;
@@ -270,24 +314,9 @@
   .btn.active{color:#06231a;background:var(--accent);border-color:var(--accent)}
   .btn.small{padding:7px 10px;font-size:11.5px}
 
-  /* ---------------------------------------------------------------- banner */
-  #banner{
-    position:absolute;left:50%;transform:translateX(-50%);bottom:26px;z-index:580;
-    max-width:min(620px,calc(100% - 32px));display:none;
-    padding:12px 40px 12px 16px;border-radius:14px;font-size:12.5px;line-height:1.5;
-    background:rgba(60,42,6,.9);border:1px solid rgba(251,191,36,.4);color:#ffe6ad;
-    backdrop-filter:blur(14px);box-shadow:var(--shadow)
-  }
-  #banner.show{display:block}
-  #banner b{color:#fff}
-  #banner a{color:#ffe6ad}
-  #banner-close{
-    position:absolute;top:6px;right:8px;width:22px;height:22px;
-    display:flex;align-items:center;justify-content:center;
-    font:inherit;font-size:17px;line-height:1;cursor:pointer;
-    color:#ffe6ad;background:transparent;border:0;border-radius:6px;padding:0
-  }
-  #banner-close:hover{background:rgba(251,191,36,.18);color:#fff}
+  /* Spanduk "Posisi terakhir dilaporkan…" beserta tombol tutupnya dibuang
+     14 Sep 2026 atas permintaan pengguna. Umur sinyal tidak hilang: ia tetap
+     dihitung hidup tiap detik di bawah angka kecepatan (#sog-sub). */
 
   #toast{
     position:absolute;left:50%;top:76px;transform:translate(-50%,-12px);z-index:700;
@@ -389,17 +418,9 @@
     .speed .big{font-size:34px}
     .row{padding:11px 12px}       /* sasaran sentuh lebih besar */
 
-    /* Catatan ditaruh di ATAS (di bawah tombol) supaya tidak pernah tertutup
-       lembar bawah; notifikasi tetap di bawah dekat aksi. Dua-duanya jadi
-       selalu terlihat dan tidak saling menimpa.
-       top:160px = batas bawah tombol walau melipat jadi dua baris (diukur
-       pada layar 320px), plus kelonggaran. max-height menjaga catatan panjang
-       tetap bisa digulir, bukan menutupi seluruh peta. */
-    #banner{
-      left:8px;right:8px;transform:none;max-width:none;
-      top:160px;bottom:auto;max-height:38vh;overflow-y:auto;
-      font-size:12px;padding:11px 38px 11px 14px
-    }
+    /* Notifikasi tetap di bawah dekat aksi, tidak pernah tertutup lembar
+       bawah. (Aturan #banner yang dulu menemaninya di sini ikut dibuang
+       bersama spanduknya.) */
     #toast{
       top:auto;bottom:calc(var(--sheet-h) + 16px);
       max-width:calc(100% - 24px);font-size:12px;text-align:center
@@ -407,7 +428,7 @@
     #panel:not(.collapsed) ~ #toast{bottom:calc(min(64vh,100% - 150px) + 16px)}
 
     /* Kotak tambah kapal jadi lembar penuh, sejalan dengan pola #panel. */
-    #addbox, #limitbox{padding:0;align-items:flex-end}
+    #addbox, #limitbox, #jadwalbox{padding:0;align-items:flex-end}
     .addbox-card{
       width:100%;max-height:88vh;border-radius:16px 16px 0 0;border-bottom:0
     }
@@ -471,13 +492,6 @@
     </div>
 
     <div class="rows" id="rows"></div>
-
-    <div class="section-title">Sumber lain (citra satelit)</div>
-    <div class="links">
-      <a id="lnk-mt" target="_blank" rel="noopener">MarineTraffic</a>
-      <a id="lnk-vf" target="_blank" rel="noopener">VesselFinder</a>
-      <a id="lnk-cm" target="_blank" rel="noopener">CruiseMapper</a>
-    </div>
   </div>
 </aside>
 
@@ -487,11 +501,9 @@
     <div class="btn small" id="refresh-btn" title="Ambil lokasi terbaru dari sumbernya sekarang">🔄 Refresh lokasi terbaru</div>
     <div class="btn small" id="follow-btn">🎯 Ikuti</div>
     <div class="btn small" id="trail-btn">〰️ Jejak</div>
-    <div class="btn small" id="info-btn" title="Tampilkan lagi catatan keterlambatan data">ℹ️ Info</div>
+    <div class="btn small" id="jadwal-btn" title="Jadwal pelayaran + perusahaan kapal yang sedang dipilih">📅 Jadwal</div>
   </div>
 </div>
-
-<div id="banner"><div id="banner-text"></div><button id="banner-close" title="Sembunyikan catatan ini">×</button></div>
 
 <div id="addbox">
   <div class="addbox-card">
@@ -541,6 +553,16 @@
   </div>
 </div>
 
+<div id="jadwalbox">
+  <div class="addbox-card" style="width:min(620px,100%)">
+    <div class="addbox-head">
+      <b id="jadwal-judul">Jadwal kapal</b>
+      <button id="jadwalbox-close" class="modal-close" title="Tutup">×</button>
+    </div>
+    <div class="addbox-body" id="jadwal-isi"></div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <div id="err">
@@ -560,7 +582,6 @@
 
   if (!window.L) { document.getElementById("err").classList.add("show"); return; }
 
-  var STALE_SEC   = 6 * 3600;     // spanduk peringatan kalau data setua ini
   var TRAIL_GAP_S = 12 * 3600;    // jeda yang memutus garis jejak
   var TRAIL_MAX   = 6000;         // titik maksimum untuk kapal TERPILIH
   // Jejak kapal yang tidak terpilih dipotong jauh lebih pendek. TRAIL_MAX itu
@@ -667,8 +688,11 @@
   var warnaPeta = {};            // mmsi -> warna, diisi apply()
 
   // ------------------------------------------------------------ ikon kapal
-  // Satu warna per kapal, dipakai di titik daftar DAN di ikon petanya supaya
-  // baris di daftar bisa dicocokkan dengan penanda di peta.
+  // Satu warna per PERUSAHAAN (lihat pengisian warnaPeta di apply()), dipakai
+  // di titik daftar DAN di ikon petanya supaya baris di daftar bisa dicocokkan
+  // dengan penanda di peta. Perusahaan yang berbeda mendapat warna berbeda,
+  // jadi jumlah perusahaan yang muat tanpa mengulang warna adalah panjang
+  // daftar ini.
   var PALET = ["#3ddc97", "#38bdf8", "#f59e0b", "#f472b6", "#a78bfa",
                "#fb7185", "#4ade80", "#22d3ee", "#facc15", "#c084fc"];
 
@@ -751,7 +775,10 @@
     var html = "";
     for (var i = 0; i < ships.length; i++) {
       var sh = ships[i];
-      var sub = (sh.sog == null ? "kecepatan ?" : sh.sog.toFixed(1) + " kn") +
+      // Perusahaan lebih dulu di baris kedua: itulah yang menerangkan kenapa
+      // dua baris bisa bertitik warna sama.
+      var sub = (sh.company ? sh.company + " · " : "") +
+                (sh.sog == null ? "kecepatan ?" : sh.sog.toFixed(1) + " kn") +
                 " · " + (sh.age == null ? "belum ada data" : ago(sh.age));
       html += '<div class="fleet-item' +
                 (sh.mmsi === selectedMmsi ? " active" : "") +
@@ -858,6 +885,122 @@
     if (e.target === $("limitbox")) closeLimit();   // klik di luar kartu
   });
 
+  // ------------------------------------------------------- kartu jadwal
+  //
+  // Isinya datang dari `jadwal` milik kapal (diisi tracker.py dari CruiseMapper)
+  // dan dari `company` di ships.json. Keduanya bisa kosong — kapal yang baru
+  // ditambahkan belum punya jadwal sampai putaran berikutnya — jadi tiap
+  // bagian diperiksa dulu dan yang kosong tidak digambar sama sekali, bukan
+  // digambar sebagai baris kosong.
+
+  function jdPasangan(k, v) {
+    if (!v) return "";
+    return '<div class="jd-pair"><div class="jd-k">' + esc(k) +
+           '</div><div class="jd-v">' + esc(v) + "</div></div>";
+  }
+
+  function jdBlok(judul, isi) {
+    if (!isi) return "";
+    return '<div class="jd-blok"><div class="jd-judul">' + esc(judul) +
+           "</div>" + isi + "</div>";
+  }
+
+  function renderJadwal(s) {
+    var j = (s && s.jadwal) || {};
+    var perusahaan = (s && s.company) || "";
+    var html = "";
+
+    // -- perusahaan ------------------------------------------------------
+    // Dua sumber ditampilkan berdampingan dengan sengaja. `company` dari
+    // ships.json yang menentukan warna di peta; Owner/Operator dari
+    // CruiseMapper adalah pembandingnya. Kalau keduanya berbeda, itu terlihat
+    // di sini — bukan tersembunyi.
+    var isiPt = "";
+    if (perusahaan) {
+      isiPt += '<div class="jd-pair"><div class="jd-k">Perusahaan</div>' +
+               '<div class="jd-v"><span class="jd-chipline">' +
+               '<span class="jd-swatch" style="background:' +
+                 esc(warnaUntuk(s.mmsi)) + '"></span>' + esc(perusahaan) +
+               "</span></div></div>";
+    }
+    isiPt += jdPasangan("Operator", j.operator);
+    isiPt += jdPasangan("Pemilik", j.owner);
+    isiPt += jdPasangan("Lini", j.line);
+    isiPt += jdPasangan("Gross tonnage", j.gt);
+    isiPt += jdPasangan("Penumpang", j.passengers);
+    isiPt += jdPasangan("Tahun built", j.built);
+    if (j.error) {
+      isiPt += '<div class="jd-pair"><div class="jd-k">Catatan</div>' +
+               '<div class="jd-v">Jadwal gagal diambil ulang — yang tampil ' +
+               "di bawah ini hasil pengambilan terakhir yang berhasil.</div></div>";
+    }
+    html += jdBlok("Perusahaan", isiPt);
+
+    // -- pelayaran berjalan ----------------------------------------------
+    var c = j.current || {};
+    var isiCur = "";
+    if (c.title || (c.ports && c.ports.length)) {
+      var kapan = c.from && c.to ? c.from + " → " + c.to : (c.from || c.to || "");
+      if (c.title || kapan) {
+        isiCur += '<div class="jd-laut">' +
+                  (c.title ? "<b>" + esc(c.title) + "</b>" : "") +
+                  (kapan ? (c.title ? "<br>" : "") + esc(kapan) : "") + "</div>";
+      }
+      for (var p = 0; p < (c.ports || []).length; p++) {
+        isiCur += '<div class="jd-baris">' +
+                  '<div class="jd-tanggal">' + esc(c.ports[p][0]) + "</div>" +
+                  '<div class="jd-isi">' + esc(c.ports[p][1]) + "</div></div>";
+      }
+    } else {
+      isiCur = '<div class="jd-v" style="color:var(--ink-dim);font-size:12.5px">' +
+               "CruiseMapper tidak memuat jadwal berjalan untuk kapal ini.</div>";
+    }
+    html += jdBlok("Pelayaran berjalan", isiCur);
+
+    // -- jadwal berikutnya ------------------------------------------------
+    var up = j.upcoming || [];
+    var isiUp = "";
+    if (up.length) {
+      isiUp += '<div class="jd-tabel">';
+      for (var u = 0; u < up.length; u++) {
+        isiUp += '<div class="jd-baris">' +
+                 '<div class="jd-tanggal">' + esc(up[u].date) + "</div>" +
+                 '<div class="jd-isi">' + esc(up[u].title) + "</div>" +
+                 '<div class="jd-pelabuhan">' + esc(up[u].port) + "</div>" +
+                 '<div class="jd-harga">' + esc(up[u].price) + "</div></div>";
+      }
+      isiUp += "</div>";
+    } else {
+      isiUp = '<div class="jd-v" style="color:var(--ink-dim);font-size:12.5px">' +
+              "Belum ada jadwal mendatang yang terdaftar untuk kapal ini.</div>";
+    }
+    html += jdBlok("Jadwal berikutnya" + (up.length ? " (" + up.length + ")" : ""), isiUp);
+
+    // -- kaki -------------------------------------------------------------
+    var kaki = j.fetched_at
+      ? "Sumber jadwal & perusahaan: CruiseMapper · diambil " +
+        ago(Math.max(0, Math.round(Date.now() / 1000 - j.fetched_at))) + "."
+      : "Jadwal belum pernah diambil untuk kapal ini — muncul setelah " +
+        "pengecekan terjadwal berikutnya.";
+    html += '<div class="jd-kaki">' + esc(kaki) + "</div>";
+
+    $("jadwal-judul").textContent = (s && (s.label || s.mmsi)) || "Jadwal kapal";
+    $("jadwal-isi").innerHTML = html;
+  }
+
+  function openJadwal() {
+    if (!current) { toast("Belum ada kapal yang dipilih"); return; }
+    renderJadwal(current);
+    $("jadwalbox").classList.add("show");
+  }
+  function closeJadwal() { $("jadwalbox").classList.remove("show"); }
+
+  $("jadwal-btn").onclick = openJadwal;
+  $("jadwalbox-close").onclick = closeJadwal;
+  $("jadwalbox").addEventListener("click", function (e) {
+    if (e.target === $("jadwalbox")) closeJadwal();   // klik di luar kartu
+  });
+
   function selectShip(mmsi) {
     if (mmsi === selectedMmsi) return;
     selectedMmsi = mmsi;
@@ -911,7 +1054,6 @@
     html += row("Cuaca", s.weather && s.weather.temperature
       ? esc([s.weather.temperature, s.weather.wind, s.weather.pressure]
             .filter(Boolean).join(" · ")) : null);
-    html += row("Sumber", s.source ? esc(s.source) : null);
 
     $("rows").innerHTML = html || '<div class="row"><span class="k">Belum ada data</span></div>';
   }
@@ -1124,11 +1266,27 @@
 
     if (!data.ships || !data.ships.length) return;
 
-    // Warna ditetapkan menurut posisi di daftar, jadi baris ke-3 di panel
-    // selalu berwarna sama dengan penanda ke-3 di peta.
+    // Warna ditetapkan per PERUSAHAAN, bukan per kapal: dua kapal milik
+    // perusahaan yang sama harus berwarna sama, supaya kelompoknya terbaca
+    // sekilas di peta. Urutan perusahaan mengikuti kemunculan pertamanya di
+    // daftar, jadi warnanya tidak berpindah-pindah antar-muat ulang.
+    //
+    // Kapal yang `company`-nya kosong tetap dapat warnanya sendiri seperti
+    // dulu — satu kapal tanpa perusahaan tidak boleh menyeret kapal lain yang
+    // kebetulan sama-sama kosong ke warna yang sama.
     warnaPeta = {};
+    var warnaPerusahaan = {}, nWarna = 0;
     for (var w = 0; w < data.ships.length; w++) {
-      warnaPeta[data.ships[w].mmsi] = PALET[w % PALET.length];
+      var kapal = data.ships[w];
+      var pt = (kapal.company || "").trim().toLowerCase();
+      if (pt) {
+        if (!warnaPerusahaan.hasOwnProperty(pt)) {
+          warnaPerusahaan[pt] = PALET[nWarna++ % PALET.length];
+        }
+        warnaPeta[kapal.mmsi] = warnaPerusahaan[pt];
+      } else {
+        warnaPeta[kapal.mmsi] = PALET[nWarna++ % PALET.length];
+      }
     }
 
     // Kapal yang ditampilkan: yang sedang dipilih, atau yang pertama kalau
@@ -1180,11 +1338,6 @@
 
     renderPanel(s, s.age);
 
-    // tautan luar
-    $("lnk-mt").href = "https://www.marinetraffic.com/en/ais/details/ships/mmsi:" + s.mmsi;
-    $("lnk-vf").href = "https://www.vesselfinder.com/vessels/details/" + (s.imo || "");
-    $("lnk-cm").href = "https://www.cruisemapper.com/?imo=" + (s.imo || "");
-
     // peta
     var punyaFix = (s.lat != null && s.lon != null);
     var pel = markers[s.mmsi] && markers[s.mmsi].m.getElement();
@@ -1214,30 +1367,11 @@
     }
 
     drawTrail();
-
-    // spanduk kalau datanya sudah lama
-    renderBanner(s);
   }
 
-  // Catatan keterlambatan data. Bisa disembunyikan lewat tombol × dan
-  // dimunculkan lagi lewat tombol ℹ️ Info.
-  var bannerMuted = false;
-
-  function renderBanner(s) {
-    var banner = $("banner");
-    if (bannerMuted || !s || s.age == null || s.age <= STALE_SEC) {
-      banner.classList.remove("show");
-      return;
-    }
-    $("banner-text").innerHTML =
-      "<b>Posisi terakhir dilaporkan " + (s.reported ? esc(s.reported) : ago(s.age)) + "</b> (" +
-      (s.reported_human || ago(s.age)) + "). " +
-      "Skrip ini membaca halaman publik gratis, jadi pembaruannya tidak secepat GPS — " +
-      "saat kapal sandar, posisi baru bisa muncul beberapa jam sekali. " +
-      'Cek <a href="' + $("lnk-mt").href + '" target="_blank" rel="noopener">MarineTraffic</a> / ' +
-      '<a href="' + $("lnk-vf").href + '" target="_blank" rel="noopener">VesselFinder</a> untuk pembanding.';
-    banner.classList.add("show");
-  }
+  // Spanduk keterlambatan data dibuang 14 Sep 2026 atas permintaan pengguna,
+  // jadi tidak ada lagi `bannerMuted` / `renderBanner()`. Umur sinyal tetap
+  // terbaca di #sog-sub (dihitung hidup tiap detik di dekat jam).
 
   // ------------------------------------------------------------ sumber data
   // Versi lokal (`python3 tracker.py`) menyajikan /api/state dan SSE
@@ -1526,19 +1660,11 @@
       .then(function () { refreshBusy = false; b.textContent = "🔄 Refresh lokasi terbaru"; });
   };
 
-  $("banner-close").onclick = function () {
-    bannerMuted = true;
-    $("banner").classList.remove("show");
-    toast("Catatan disembunyikan — tekan ℹ️ Info untuk melihat lagi");
-  };
-
-  $("info-btn").onclick = function () {
-    bannerMuted = false;
-    renderBanner(current);
-    if (!$("banner").classList.contains("show")) {
-      toast(current ? "Data masih segar — tidak ada catatan" : "Menunggu data…");
-    }
-  };
+  // Pengendali #banner-close dan #info-btn dibuang 14 Sep 2026 bersama
+  // spanduknya. Sisa `};` penutupnya sempat tertinggal dan membuat SELURUH
+  // skrip halaman gagal di-parse — halaman jadi kerangka statis tanpa peta dan
+  // tanpa daftar. Uji fungsi-per-fungsi tidak menangkapnya karena tiap fungsi
+  // diekstrak sendiri-sendiri; yang menangkap cuma menjalankan berkasnya utuh.
 
   // ------------------------------------------------- daftar kapal: interaksi
   $("fleet").addEventListener("click", function (e) {
@@ -1597,6 +1723,7 @@
     if (e.key !== "Escape") return;
     if ($("addbox").classList.contains("show")) closeAdd();
     else if ($("limitbox").classList.contains("show")) closeLimit();
+    else if ($("jadwalbox").classList.contains("show")) closeJadwal();
   });
   $("manual-toggle").onclick = function () {
     var buka = $("manual").classList.toggle("show");

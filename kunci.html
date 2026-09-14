@@ -831,11 +831,18 @@
     document.body.classList.toggle("galat", kelas === "galat");
   }
 
+  // Mengosongkan keenam kotaknya saja. Fokus TIDAK ikut dipindah di sini.
+  //
+  // Dulu fungsi ini diakhiri `butir[0].focus()`, dan di ponsel itu berarti papan
+  // ketik meluncur naik setiap kali kode ditolak — tepat di bawah tirai
+  // peringatan yang sedang menutupi layar, lalu turun lagi begitu tirainya
+  // menutup. Yang mengetik melihat papan ketik muncul-turun tanpa pernah
+  // mengetuk apa pun. Pemulihan fokusnya sekarang dipisah, dan pemanggilnya yang
+  // menentukan KAPAN — lihat `alarmTutup()`.
   function bersihkan() {
     for (var i = 0; i < N; i++) butir[i].value = "";
     dokumenter();
     grup.classList.remove("salah");
-    butir[0].focus();
   }
 
   // Menyembunyikan angka yang sudah diketik. Dipanggil dari SATU tempat saja
@@ -1040,31 +1047,36 @@
   //
   // `at` dalam milidetik sejak tirai muncul. `akhir` menutup tirai dan
   // memindahkan halaman; angka terakhir WAJIB sama dengan LAMA.
-  var LAMA = 15000;
+  var LAMA = 30000;
   // Lima fase. `fase` menandai tahap pertama tiap bagian; penanda di layar
-  // mengikuti ini, jadi yang menonton tahu 15 detik ini sedang di bagian mana.
+  // mengikuti ini, jadi yang menonton tahu 30 detik ini sedang di bagian mana.
+  //
+  // Diubah dari 15 detik ke 30 detik (14 Sep 2026, permintaan pengguna). Yang
+  // digandakan adalah SELURUH `at`-nya, bukan cuma angka terakhirnya — kalau
+  // hanya ujungnya yang digeser, 15 detik terakhirnya jadi layar diam dan itu
+  // terbaca seperti animasinya rusak, bukan seperti animasi yang panjang.
   var FASE = ["Verify", "Decrypt", "Uplink", "Lock", "Enter"];
   var TAHAP = [
-    { at: 0,     fase: 0, cap: "Access Granted",   kelas: "" },
-    { at: 260,   log: "sequence ......... initiated" },
-    { at: 900,   log: "identity ......... operator" },
-    { at: 2300,  log: "clearance ........ level 4" },
-    { at: 3100,  log: "node ............. 07-AE" },
-    { at: 4000,  fase: 1, cap: "Decrypting Tileset", kelas: "biru" },
-    { at: 4100,  jalur: true },
-    { at: 4500,  log: "tiles ........... chart/coastline" },
-    { at: 5300,  log: "tiles ........... chart/depth" },
-    { at: 6100,  log: "tiles ........... vessels/live" },
-    { at: 7100,  fase: 2, cap: "Acquiring Uplink", kelas: "biru" },
-    { at: 7600,  log: "handshake ....... complete" },
-    { at: 8600,  log: "carrier ......... locked" },
-    { at: 10100, fase: 3, cap: "Vector Lock",      kelas: "kuning" },
-    { at: 10200, bidik: true },
-    { at: 11200, log: "range ........... nominal" },
-    { at: 12200, log: "target .......... resolved" },
-    { at: 13400, fase: 4, cap: "Entering",         kelas: "" },
-    { at: 14300, kilat: true },
-    { at: 15000, akhir: true }
+    { at: 0,     fase: 0, cap: "Access Granted",    kelas: "" },
+    { at: 520,   log: "sequence ......... initiated" },
+    { at: 1800,  log: "identity ......... operator" },
+    { at: 4600,  log: "clearance ........ level 4" },
+    { at: 6200,  log: "node ............. 07-AE" },
+    { at: 8000,  fase: 1, cap: "Decrypting Tileset", kelas: "biru" },
+    { at: 8200,  jalur: true },
+    { at: 9000,  log: "tiles ........... chart/coastline" },
+    { at: 10600, log: "tiles ........... chart/depth" },
+    { at: 12200, log: "tiles ........... vessels/live" },
+    { at: 14200, fase: 2, cap: "Acquiring Uplink",  kelas: "biru" },
+    { at: 15200, log: "handshake ....... complete" },
+    { at: 17200, log: "carrier ......... locked" },
+    { at: 20200, fase: 3, cap: "Vector Lock",       kelas: "kuning" },
+    { at: 20400, bidik: true },
+    { at: 22400, log: "range ........... nominal" },
+    { at: 24400, log: "target .......... resolved" },
+    { at: 26800, fase: 4, cap: "Entering",          kelas: "" },
+    { at: 28600, kilat: true },
+    { at: 30000, akhir: true }
   ];
 
   var tirai   = document.getElementById("sukses");
@@ -1175,12 +1187,23 @@
   // ==================================================== TIRAI GAGAL
   var alarm    = document.getElementById("alarm");
   var alarmLog = document.getElementById("alarm-log");
+  // Berapa lama peringatan gagal bertahan. Dinamai, bukan ditulis di dalam
+  // setTimeout-nya, supaya uji bisa membacanya sebagai data — sama seperti LAMA
+  // di tirai sukses.
+  var LAMA_GAGAL = 10000;
   var percobaan = 0;
   var timerAlarm = null;
 
   function alarmTutup() {
     clearTimeout(timerAlarm);
     alarm.classList.remove("tampil");
+    // Fokus baru dikembalikan DI SINI, bukan saat kodenya ditolak. Sesudah
+    // tirainya menutup, kotak-kotaknya terlihat lagi — jadi papan ketik yang
+    // naik di ponsel datang tepat saat memang sudah bisa dipakai mengetik.
+    // Memindahkannya lebih awal membuat papan ketik muncul di bawah tirai.
+    // `focus()` tidak melakukan apa-apa kalau halaman ini tidak sedang aktif,
+    // jadi aman dipanggil kapan saja.
+    if (!sudahLewat) fokusKe(0);
   }
 
   function alarmBuka() {
@@ -1191,9 +1214,11 @@
       "> attempt .......... <b>" + percobaan + "</b>";
     alarm.classList.add("tampil");
     clearTimeout(timerAlarm);
-    // Menutup sendiri. Alarm yang menunggu diklik akan mengunci orang di luar
-    // hanya karena ia tidak tahu harus mengklik apa.
-    timerAlarm = setTimeout(alarmTutup, 2600);
+    // Menutup sendiri sesudah 10 detik (dinaikkan dari 2,6 detik, permintaan
+    // pengguna 14 Sep 2026). Alarm yang menunggu diklik akan mengunci orang di
+    // luar hanya karena ia tidak tahu harus mengklik apa — tapi yang terlalu
+    // cepat hilang tidak sempat terbaca.
+    timerAlarm = setTimeout(alarmTutup, LAMA_GAGAL);
   }
 
   alarm.addEventListener("click", alarmTutup);
@@ -1245,6 +1270,10 @@
       buka.disabled = false;
       if (hasil.status === 429) {
         bersihkan();
+        // Di sini fokusnya boleh langsung dikembalikan: tidak ada tirai yang
+        // menutupi layar, jadi papan ketiknya muncul saat kotaknya memang sudah
+        // terlihat.
+        fokusKe(0);
         tulis("too many attempts — wait a moment", "ingat");
       } else if (hasil.status === 500) {
         // Sebabnya hampir selalu env yang belum diatur di Vercel. Pesannya

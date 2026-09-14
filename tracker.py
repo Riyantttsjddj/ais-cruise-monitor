@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import calendar
+import datetime
 import html as html_mod
 import json
 import math
@@ -399,6 +400,191 @@ def fetch_cruisemapper(fetcher: Fetcher, ship) -> Snapshot:
     return snap
 
 
+# ------------------------------------------------------- jadwal & perusahaan
+#
+# Bagian ini TIDAK menyentuh posisi sama sekali. Ia menjawab pertanyaan lain:
+# kapal ini milik perusahaan apa, dan apa jadwal pelayarannya. Sumbernya
+# CruiseMapper, yang halaman kapalnya memuat dua hal yang tidak ada di
+# MyShipTracking: Owner/Operator, dan daftar pelayaran yang akan datang.
+#
+# Dipisah dari jalur posisi dengan sengaja. Jadwal berubah beberapa kali
+# sebulan, posisi berubah tiap menit — menyatukan keduanya berarti tiap
+# gangguan kecil di halaman jadwal ikut menjatuhkan pembaruan posisi.
+
+JADWAL_SEGAR_S = 6 * 3600     # jadwal diambil ulang paling sering segini
+JADWAL_GAGAL_S = 6 * 3600     # jeda setelah gagal — jangan menghajar situsnya
+JADWAL_MAKS = 24              # baris jadwal mendatang yang disimpan
+# Berapa kapal yang jadwalnya boleh disegarkan dalam SATU putaran. Fetcher
+# hanya mengizinkan satu permintaan per 5 detik dan tiap jadwal butuh dua
+# (halaman pelacak → halaman kapal), jadi menyegarkan delapan kapal sekaligus
+# berarti ~80 detik tambahan. Kalau semua kapal basi bersamaan — pertama kali
+# fitur ini menyala, misalnya — sisanya menyusul di putaran berikutnya.
+JADWAL_PER_PUTARAN = 3
+
+
+def fetch_jadwal(fetcher: Fetcher, ship) -> dict:
+    """Owner/Operator + jadwal pelayaran satu kapal dari CruiseMapper.
+
+    Dua permintaan: halaman pelacak `?imo=…` untuk menemukan alamat halaman
+    kapalnya, lalu halaman kapal itu sendiri. Alamat halaman kapal tidak bisa
+    disusun sendiri — ia berakhir dengan nomor internal yang tidak ada
+    hubungannya dengan IMO (`Wonder-Of-The-Seas-2165` untuk IMO 9838345) —
+    jadi harus dibaca dari tautannya.
+
+    Melempar SourceError kalau salah satu langkah gagal; pemanggil yang
+    memutuskan itu fatal atau tidak (di sini: tidak pernah fatal).
+    """
+    if not ship.imo:
+        raise SourceError("butuh IMO untuk jadwal CruiseMapper")
+
+    raw, _ = fetcher.get(f"https://www.cruisemapper.com/?imo={ship.imo}")
+    if not raw:
+        raise SourceError("halaman pelacak kosong")
+    # Halaman kapal dan halaman denah memakai slug yang sama, jadi keduanya
+    # bisa dipakai sebagai sumber alamat. Kalau salah satu tautannya berubah
+    # bentuk, yang lain masih menolong.
+    m = (re.search(r'cruisemapper\.com/ships/([A-Za-z0-9\-]+)"', raw)
+         or re.search(r'cruisemapper\.com/deckplans/([A-Za-z0-9\-]+)"', raw))
+    if not m:
+        raise SourceError("tautan halaman kapal tidak ada di halaman pelacak")
+
+    page, _ = fetcher.get("https://www.cruisemapper.com/ships/" + m.group(1))
+    if not page:
+        raise SourceError("halaman kapal kosong")
+    clean = strip_scripts(page)
+
+    out = {"fetched_at": time.time(), "error": ""}
+
+    # 1. Owner / Operator. Tabelnya memakai <td>/<td>, bukan <th>/<td>, jadi
+    #    parse_tables() tidak melihatnya sama sekali.
+    spec = {}
+    for lab, val in re.findall(r"<tr>\s*<td>([^<]{2,30})</td>\s*<td>(.*?)</td>\s*</tr>",
+                               clean, re.S | re.I):
+        key = lab.strip()
+        if key and key not in spec:
+            spec[key] = text_of(val)
+    out["owner"] = spec.get("Owner", "")
+    out["operator"] = spec.get("Operator", "")
+    out["line"] = spec.get("Cruise Line", "")
+    out["gt"] = spec.get("Gross Tonnage", "")
+    out["passengers"] = spec.get("Passengers", "")
+    out["built"] = spec.get("Year Built", "")
+
+    # 2. Pelayaran yang sedang berjalan, lengkap dengan jam tiap persinggahan.
+    #
+    #    `id="current_cruise"` dipakai DUA KALI di halaman ini: sekali untuk
+    #    blok "current position", sekali lagi untuk blok "current itinerary".
+    #    Yang dicari yang terakhir — karena itu rfind(), bukan find().
+    #
+    #    Kapal yang tidak punya jadwal (Pacific World, misalnya) hanya punya
+    #    blok "current position" itu. Karena itu judulnya diperiksa lebih dulu:
+    #    tanpa pemeriksaan itu, potongan teks sesudahnya akan menyerempet
+    #    <strong> milik bagian lain halaman dan kartu jadwal menampilkan
+    #    kalimat yang tidak ada hubungannya dengan pelayarannya.
+    out["current"] = {}
+    i = clean.rfind('id="current_cruise"')
+    if i >= 0 and "itinerary" in clean[i:i + 200].lower():
+        tutup = clean.find("</h3>", i)
+        lanjut = clean.find('<div class="row clearSpace', tutup if tutup > 0 else i)
+        potong = clean[i: lanjut if lanjut > 0 else i + 60000]
+        judul = re.search(r"<strong>(.*?)</strong>", potong, re.S)
+        tanggal = re.findall(r"<strong>(.*?)</strong>", potong, re.S)
+        ports = []
+        for lab, val in re.findall(
+                r'<td class="date">(.*?)</td>\s*<td class="text">(.*?)</td>',
+                potong, re.S | re.I):
+            # Tiap persinggahan diikuti tautan "hotels" milik situsnya; kata itu
+            # ikut terbaca text_of() dan bukan bagian dari nama kotanya.
+            isi = re.sub(r"\s*\bhotels?$", "", text_of(val)).strip()
+            ports.append([text_of(lab), isi])
+        out["current"] = {
+            "title": text_of(judul.group(1)) if judul else "",
+            # Dua <strong> sesudah judul adalah tanggal mulai & selesai.
+            "from": text_of(tanggal[1]) if len(tanggal) > 2 else "",
+            "to": text_of(tanggal[2]) if len(tanggal) > 2 else "",
+            "ports": ports[:40],
+        }
+
+    # 3. Jadwal berikutnya. Situsnya menyimpan yang sudah lewat juga, jadi
+    #    disaring dari hari ini — kalau tidak, "jadwal" akan berisi pelayaran
+    #    dua tahun lalu dan yang terdekat justru tidak muat.
+    # `utcnow()` sudah usang di Python 3.12+ dan memunculkan DeprecationWarning
+    # di 3.14; bentuk berzona waktu ini sama hasilnya dan tidak berisik.
+    hari_ini = datetime.datetime.now(datetime.timezone.utc).date()
+    upcoming = []
+    for row in re.findall(r'<tr data-row="\d+"[^>]*>(.*?)</tr>', clean, re.S | re.I):
+        if 'cruiseDatetime' not in row:
+            continue
+        sel = dict(re.findall(r'<td class="(cruiseDatetime|cruiseTitle|cruiseDeparture|cruisePrice)"[^>]*>(.*?)</td>',
+                              row, re.S | re.I))
+        if not sel:
+            continue
+        tanggal = text_of(sel.get("cruiseDatetime", ""))
+        try:
+            kapan = datetime.datetime.strptime(tanggal, "%Y %b %d").date()
+        except ValueError:
+            continue
+        if kapan < hari_ini:
+            continue
+        upcoming.append({
+            "date": tanggal,
+            "title": text_of(sel.get("cruiseTitle", "")),
+            "port": text_of(sel.get("cruiseDeparture", "")),
+            "price": text_of(sel.get("cruisePrice", "")),
+        })
+        if len(upcoming) >= JADWAL_MAKS:
+            break
+    out["upcoming"] = upcoming
+    if not (out["owner"] or out["operator"] or upcoming or out["current"]):
+        raise SourceError("tidak ada satu pun bagian jadwal yang terbaca")
+    return out
+
+
+def jadwal_basi(ship) -> bool:
+    """True kalau jadwal kapal ini perlu diambil ulang.
+
+    Satu stempel waktu dipakai untuk berhasil maupun gagal — yang membedakan
+    hanya jedanya. Tanpa jeda setelah gagal, situs yang sedang bermasalah akan
+    dihubungi tiap putaran, dan itu justru memperlambat pemulihannya.
+    """
+    j = getattr(ship, "jadwal", None) or {}
+    umur = time.time() - (j.get("fetched_at") or 0)
+    return umur > (JADWAL_GAGAL_S if j.get("error") else JADWAL_SEGAR_S)
+
+
+def segarkan_jadwal(store, fetcher, maks: int = JADWAL_PER_PUTARAN) -> int:
+    """Perbarui jadwal kapal-kapal yang sudah basi. Mengembalikan jumlah yang
+    berhasil.
+
+    Kegagalan di sini sengaja TIDAK pernah masuk ke `store.status["error"]`.
+    Status itu dipakai workflow untuk menandai run gagal, dan jadwal yang tidak
+    terbaca tidak boleh membuat run posisi yang sehat terlihat rusak.
+    """
+    berhasil = 0
+    for ship in list(store.ships.values()):
+        if berhasil >= maks:
+            break
+        if not jadwal_basi(ship):
+            continue
+        try:
+            ship.jadwal = fetch_jadwal(fetcher, ship)
+        except Exception as exc:   # apa pun penyebabnya, jadwal tidak pernah fatal
+            lama = getattr(ship, "jadwal", None) or {}
+            # Jadwal lama DIPERTAHANKAN, hanya stempel waktunya yang dimajukan
+            # dan ditandai gagal. Membuang hasil yang masih terbaca karena satu
+            # percobaan gagal berarti kartu jadwal mendadak kosong.
+            lama["fetched_at"] = time.time()
+            lama["error"] = f"{type(exc).__name__}: {exc}"[:200]
+            ship.jadwal = lama
+            print(f"[jadwal] {ship.label or ship.mmsi}: gagal — {exc}", file=sys.stderr)
+            store.dirty = True
+            continue
+        ship.jadwal["error"] = ""
+        store.dirty = True
+        berhasil += 1
+    return berhasil
+
+
 def clean_imo(href: str) -> str:
     """Ambil IMO dari slug, tapi tolak nilai sampahnya.
 
@@ -485,6 +671,7 @@ class Ship:
     flag: str = ""
     callsign_hint: str = ""
     url: str = ""            # override URL halaman MyShipTracking
+    company: str = ""        # perusahaan; penentu warna di peta (lihat index.html)
 
     name: str = ""
     callsign: str = ""
@@ -514,6 +701,10 @@ class Ship:
     source: str = ""
 
     trail: list = field(default_factory=list)
+    # Owner/Operator + jadwal pelayaran dari CruiseMapper (lihat fetch_jadwal).
+    # Bentuknya dict bebas, bukan dataclass, supaya menambah bagian baru di
+    # halaman sumbernya tidak menuntut perubahan di sini juga.
+    jadwal: dict = field(default_factory=dict)
     distance_nm: float = 0.0
 
     def apply(self, snap: Snapshot):
@@ -627,6 +818,7 @@ class Store:
                 flag=item.get("flag", ""),
                 callsign_hint=item.get("callsign", ""),
                 url=item.get("url", ""),
+                company=item.get("company", ""),
             )
         self.status = {
             "state": "starting",     # starting | ok | stale | error
@@ -670,6 +862,8 @@ class Store:
                         "reported_ts", "fetched_at"):
                 if saved.get(key) is not None:
                     setattr(ship, key, saved[key])
+            if isinstance(saved.get("jadwal"), dict):
+                ship.jadwal = saved["jadwal"]
             ship.recompute_distance()
 
     def save(self):
@@ -686,6 +880,7 @@ class Store:
                     "lat": s.lat, "lon": s.lon, "sog": s.sog, "cog": s.cog,
                     "length": s.length, "beam": s.beam,
                     "reported_ts": s.reported_ts, "fetched_at": s.fetched_at,
+                    "jadwal": s.jadwal,
                 }
             self.dirty = False
         tmp = self.state_path.with_suffix(".tmp")
@@ -791,6 +986,7 @@ class Store:
                 "callsign": s.callsign or s.callsign_hint,
                 "flag": s.flag,
                 "type": s.ship_type,
+                "company": s.company,
                 "length": s.length,
                 "beam": s.beam,
                 "destination": s.destination,
@@ -815,6 +1011,7 @@ class Store:
                 "distance_nm": round(s.distance_nm, 1),
                 "trail": s.trail if trail_limit is None else s.trail[-trail_limit:],
                 "trail_total": len(s.trail),
+                "jadwal": s.jadwal or {},
             })
         # Jumlah kapal dihitung di sini, bukan disalin dari status, supaya tidak
         # pernah basi setelah ada kapal ditambah/dihapus saat berjalan.
@@ -944,6 +1141,14 @@ def poll_ship(store: Store, fetcher: Fetcher, ship) -> bool:
     if snap is None:
         return False
     apply_snapshot(store, ship, snap)
+    # Kapal yang baru ditambahkan belum punya jadwal sama sekali, dan itulah
+    # saat paling terasa: pengguna baru saja menekan "+" dan langsung ingin
+    # melihat jadwalnya. Satu kapal saja, jadi tidak memperlambat apa pun.
+    if jadwal_basi(ship):
+        try:
+            ship.jadwal = fetch_jadwal(fetcher, ship)
+        except Exception:
+            pass          # posisinya sudah berhasil; jadwal menyusul di putaran
     store.broadcast()
     return True
 
@@ -973,6 +1178,10 @@ def poll_once(store: Store, fetcher: Fetcher):
         else:
             store.status.update(state="error", failures=store.status["failures"] + 1,
                                 error="; ".join(errors)[:400] or "tidak ada data")
+    # Jadwal disegarkan SESUDAH status posisi ditetapkan, dan kegagalannya
+    # tidak pernah menyentuh status itu — halaman jadwal yang sedang bermasalah
+    # tidak boleh membuat run posisi yang sehat terlihat gagal.
+    segarkan_jadwal(store, fetcher)
     store.broadcast()
 
 

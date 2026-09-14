@@ -21,19 +21,22 @@
       "flag": "Bahamas",
       "length": 362,
       "beam": 64,
-      "note": "Oasis-class cruise ship, homeport Miami"
+      "note": "Oasis-class cruise ship, homeport Miami",
+      "company": "Royal Caribbean"
     },
     {
       "mmsi": "357189000",
       "name": "PACIFIC WORLD",
       "imo": "9000259",
-      "url": "https://www.myshiptracking.com/vessels/pacific-world-mmsi-357189000-imo-9000259"
+      "url": "https://www.myshiptracking.com/vessels/pacific-world-mmsi-357189000-imo-9000259",
+      "company": "Peace Boat"
     },
     {
       "mmsi": "311000274",
       "name": "ANTHEM OF THE SEAS",
       "imo": "9656101",
-      "url": "https://www.myshiptracking.com/vessels/anthem-of-the-seas-mmsi-311000274-imo-9656101"
+      "url": "https://www.myshiptracking.com/vessels/anthem-of-the-seas-mmsi-311000274-imo-9656101",
+      "company": "Royal Caribbean"
     }
   ]
 }

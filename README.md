@@ -283,7 +283,18 @@ MyShipTracking.
 | 🔄 Refresh lokasi terbaru | **Polling manual** — paksa pengecekan kapal yang sedang dipilih, tanpa menunggu jadwal |
 | 🎯 Ikuti | Peta mengikuti posisi kapal |
 | 〰️ Jejak | Tampilkan/sembunyikan garis lintasan |
-| ℹ️ Info | Munculkan lagi catatan keterlambatan data setelah disembunyikan |
+| 📅 Jadwal | Buka jadwal pelayaran kapal yang sedang dipilih, lengkap dengan perusahaan, operator, dan pemiliknya |
+
+> **ℹ️ Info dan spanduknya sudah tidak ada** (14 Sep 2026, permintaan pengguna).
+> Dulu ada spanduk di bawah peta berisi *"Posisi terakhir dilaporkan …"* plus
+> penjelasan bahwa skrip ini membaca halaman publik gratis, tombol **ℹ️ Info**
+> untuk memunculkannya lagi, dan bagian **Sumber lain (citra satelit)** berisi
+> tautan MarineTraffic / VesselFinder / CruiseMapper. Semuanya dibuang; yang
+> tersisa sebagai pengganti keterlambatan data adalah baris **Dilaporkan** di
+> panel detail (jam + umur, mis. `3 m ago`) dan `#sog-sub` di bawah angka
+> kecepatan, yang menghitung umurnya **hidup tiap detik**. Nama sumbernya masih
+> terbaca di pil status kiri atas — itu readout kesehatan, bukan bagian Sumber
+> yang dihapus. Rincian jadwal kini ada di tombol 📅 Jadwal.
 
 **Lapisan peta** memakai tiga penyedia yang semuanya tanpa kunci: OpenStreetMap
 (terang), Esri World Imagery (satelit), dan Esri Canvas World Dark Gray
@@ -349,11 +360,25 @@ sedang dipilih:
   delapan kapal berarti ~48.000 titik polyline, dan itu membuat Leaflet
   tersendat; potongan pendek sudah cukup menunjukkan arah dan lintasan
   terkininya.
-- Tiap kapal punya **warna sendiri**, dan titik warna di barisnya di panel
-  memakai warna yang sama dengan penandanya di peta. Ini tetap berguna walau
-  sekarang ada label: warnanya berulang di kapal ke-11 (paletnya 10), dan
-  mencocokkan baris dengan penanda lewat warna jauh lebih cepat daripada
-  membaca nama satu per satu.
+- Warna penanda **mengikuti perusahaan**, bukan urutan di daftar. Kapal-kapal
+  satu perusahaan memakai warna yang **sama**; titik warna di barisnya di panel
+  memakai warna yang sama dengan penandanya di peta. Jadi dua kapal Royal
+  Caribbean sama-sama hijau, dan Peace Boat kebiruan.
+  - Sumber warnanya adalah kolom **`company` di `ships.json`** — bukan operator
+    hasil kerokan CruiseMapper. Sengaja begitu: `ships.json` stabil dan bisa
+    Anda sunting sendiri, sedangkan nama operator di situs sumber bisa berubah
+    tulisan dan membuat warnanya berpindah-pindah tanpa alasan. Operator
+    kerokan tetap **ditampilkan** di kartu 📅 Jadwal, berdampingan dengan nama
+    perusahaan, supaya kalau keduanya berbeda itu **terlihat**, bukan
+    tersembunyi.
+  - Perbandingannya tidak peduli huruf besar/kecil dan spasi, jadi
+    `Royal Caribbean` dan `  royal caribbean ` dianggap satu perusahaan.
+  - Kapal tanpa `company` **tidak** diseragamkan dengan kapal tanpa `company`
+    yang lain — masing-masing dapat warnanya sendiri. Kalau tidak begitu, semua
+    kapal yang belum diisi perusahaannya akan tampak satu perusahaan.
+  - Paletnya 10 warna, jadi ia berulang di perusahaan ke-11; mencocokkan baris
+    dengan penanda lewat warna masih jauh lebih cepat daripada membaca nama
+    satu per satu.
 - Saat pertama kali dibuka dengan lebih dari satu kapal, peta **membingkai
   semuanya** (`fitBounds`, zoom dibatasi 11) supaya "banyak kapal" itu langsung
   terlihat. Sesudah itu peta kembali mengikuti kapal terpilih — kalau tidak, ia
@@ -363,6 +388,51 @@ Pil status di kiri atas menampilkan jumlah kapal dan irama yang sedang dipakai,
 mis. `Data MyShipTracking · 2 kapal · 42× cek · tiap 11 s` atau
 `… · tiap 5 mnt (sandar)`. Di layar sempit teksnya dipendekkan jadi
 `MyShipTracking · 5 mnt` agar muat.
+
+### Kartu 📅 Jadwal
+
+Tombol **📅 Jadwal** di baris tombol membuka jadwal pelayaran kapal yang sedang
+dipilih. Isinya tiga blok, dan **blok yang datanya kosong tidak digambar sama
+sekali** — lebih baik tidak ada bagiannya daripada tabel kosong atau, lebih
+buruk, baris yang isinya sebenarnya milik bagian lain halaman:
+
+| Blok | Isi |
+|---|---|
+| **Perusahaan** | Nama perusahaan penentu warna (dengan titik warnanya), lalu **Operator**, **Pemilik**, **Gross tonnage**, **Penumpang** |
+| **Pelayaran berjalan** | Judul pelayaran, rentang tanggalnya, dan tiap persinggahan dengan jam tiba/berangkat |
+| **Jadwal berikutnya** | Tabel tanggal · judul · pelabuhan · harga, diurutkan dari hari ini, paling banyak 24 baris |
+
+Sumbernya **CruiseMapper** (halaman kapal per IMO), ditarik `tracker.py` —
+lihat `fetch_jadwal()`. Tiga hal yang perlu diketahui sebelum mengubahnya:
+
+- **Datanya di-cache, bukan diambil tiap kali kartunya dibuka.** Tiap kapal
+  disegarkan paling banyak sekali per 6 jam (`JADWAL_SEGAR_S`), dan paling
+  banyak 3 kapal per putaran (`JADWAL_PER_PUTARAN`) supaya satu putaran polling
+  tidak menyerbu situs sumbernya.
+- **Gagal mengambil ulang TIDAK menghapus jadwal lama.** Yang diperbarui cuma
+  stempel waktunya dan penanda galat, dan kartunya bilang *"gagal diambil
+  ulang"* — jadwal lama tetap tampil. Pesan galat mentahnya sengaja tidak
+  ditampilkan; ia cuma masuk log.
+- **Kegagalan jadwal tidak pernah menjadikan status polling "gagal".** Posisi
+  yang sehat tidak boleh terlihat rusak hanya karena halaman jadwalnya berubah
+  bentuk. `poll_once()` menyegarkan jadwal **sesudah** statusnya ditetapkan.
+
+Dua jebakan parser yang sudah benar-benar menggigit, dicatat di sini karena
+keduanya **tidak menghasilkan galat** — cuma hasil yang salah:
+
+- **`id="current_cruise"` muncul DUA kali** di halaman kapal CruiseMapper: yang
+  pertama blok posisi, yang kedua blok itinerary. Yang dipakai harus yang
+  **terakhir** (`rfind`), bukan yang pertama.
+- **Potongan teksnya harus dibatasi.** Dulu potongannya diambil sampai ujung
+  halaman, dan untuk kapal yang tidak punya blok itinerary sama sekali,
+  `<strong>` pertama sesudahnya ikut terbaca — PACIFIC WORLD lalu melaporkan
+  judul pelayarannya `"first departure"`, teks dari bagian lain halaman.
+  Sekarang potongannya digerbangi `"itinerary"` di 200 karakter pertama **dan**
+  dipotong di `<div class="row clearSpace` berikutnya. Hasilnya untuk kapal itu
+  sekarang kosong — arah kegagalan yang benar.
+
+Tabel spesifikasinya juga tidak terbaca `tracker.parse_tables()`: halaman kapal
+memakai `<tr><td>Label</td><td>Value</td></tr>`, bukan `<th>`/`<td>`.
 
 ### Tata letak di ponsel (lebar ≤ 720px)
 
@@ -728,22 +798,40 @@ Indonesia). Empat perilakunya sengaja, dan keempatnya punya uji sendiri:
 - **Yang mengirim hanya tindakan yang disengaja.** Kotak keenam terisi **tidak**
   mengirim apa pun, dan menempel kode lengkap juga tidak — yang mengirim cuma
   tombolnya atau Enter. Kodenya jadi sempat diperiksa dulu sebelum dikirim.
-- **Kode benar → tirai 15 detik**, lalu dialihkan ke peta. Tirai ini **tidak bisa
+- **Kode benar → tirai 30 detik**, lalu dialihkan ke peta. Tirai ini **tidak bisa
   dilewati**: tidak ada pendengar klik maupun tombol untuk itu. Satu-satunya
   jalan pintas adalah `prefers-reduced-motion`, dan itu bukan tombol lewati —
   itu pengaturan sistem yang dipilih sendiri oleh pengguna perangkatnya, dan
-  yang memintanya tidak boleh dipaksa menonton 15 detik.
-- **Kode salah → tirai peringatan** yang menutup sendiri, dengan nomor percobaan
-  yang dihitung sungguhan. Kode gagal karena sebab lain (dibatasi laju, server
-  mati) **tidak** memicu tirai ini — itu bukan kode yang salah, dan menuduh
-  pengguna salah kode saat servernya yang bermasalah itu menyesatkan.
+  yang memintanya tidak boleh dipaksa menonton 30 detik. Lamanya ada di satu
+  tempat, `var LAMA = 30000`, dan tiap entri `TAHAP` punya `at` sendiri —
+  kenaikannya dari 15 detik dikerjakan dengan menggandakan semuanya, bukan dengan
+  mengubah satu angka saja, supaya tahapnya tidak menumpuk di paruh akhir.
+- **Kode salah → tirai peringatan 10 detik** yang menutup sendiri, dengan nomor
+  percobaan yang dihitung sungguhan. Kode gagal karena sebab lain (dibatasi laju,
+  server mati) **tidak** memicu tirai ini — itu bukan kode yang salah, dan
+  menuduh pengguna salah kode saat servernya yang bermasalah itu menyesatkan.
+- **Fokus tidak direbut selagi tirainya menutup.** Ini yang membuat papan ketik
+  ponsel muncul sendiri: `bersihkan()` dulu memanggil `butir[0].focus()`, dan di
+  ponsel `focus()` pada kolom teks **menaikkan papan ketik** — jadi papan ketik
+  itu naik di bawah tirai, beberapa saat sebelum kotaknya terlihat dan bisa
+  dipakai. Sekarang fokusnya dibiarkan di tempatnya, lalu dikembalikan oleh
+  `alarmTutup()` tepat saat tirainya hilang — bukan dihapus sama sekali, karena
+  kalau begitu pengguna harus menyentuh kolomnya sendiri. `/tmp/uji_kunci_html.js`
+  bagian 11d menjaga **kedua** arah itu: tidak berpindah saat tirai tampil, dan
+  benar-benar kembali setelah tirai tutup.
 
-Ketiga yang pertama **membalik keputusan sebelumnya** (14 Sep 2026), dan itu
-disengaja: dulu angkanya diperlihatkan 650 ms, kotak keenam langsung mengirim,
-dan tirainya bisa dilewati. Uji-ujinya **dibalik, bukan dihapus** — dan
-`/tmp/uji_kunci_html.js` bagian 19 menjalankannya terhadap commit `8cd5032`
-(versi yang masih memakai ketiga perilaku lama itu) untuk membuktikan uji barunya
-memang merah di sana. Kalau salah satunya diam-diam kembali, bagian 4/5/6/10c
+Keempat perilaku terakhir **membalik keputusan sebelumnya** (14 Sep 2026), dan
+itu disengaja: dulu angkanya diperlihatkan 650 ms, kotak keenam langsung
+mengirim, tirainya bisa dilewati, fokusnya direbut di bawah tirai, tirai
+suksesnya 15 detik, dan peringatan gagalnya 2,6 detik. Uji-ujinya **dibalik,
+bukan dihapus** — dan `/tmp/uji_kunci_html.js` menjalankannya terhadap versi lama
+dari git untuk membuktikan uji barunya memang merah di sana: bagian 18 memakai
+commit `c50a9f0` (sebelum kotak digit ada), bagian 19 memakai `8cd5032` (masih
+memakai ketiga perilaku lama pertama), dan bagian 20 memakai `b7d18c8` (masih
+fokus-direbut + peringatan 2,6 detik + tirai 15 detik). Pembandingnya dicari
+**dari isi berkas**, bukan dari posisi seperti `HEAD~1` — HEAD bergerak tiap
+commit, dan pembanding yang ikut bergerak akan diam-diam berhenti membuktikan
+apa pun. Kalau salah satu perilaku diam-diam kembali, bagian 4/5/6/10c/10/11d/11e
 yang jadi merah.
 
 Satu aturan yang dipegang seluruh teks di halaman itu: **tidak ada angka yang
@@ -887,3 +975,30 @@ riwayat.
 
 `state.json`, `data.json`, dan `run.log` ada di `.gitignore` — di branch `main`.
 Di branch `data` dua yang pertama justru memang disimpan; itulah gunanya.
+
+### Satu uji yang wajib dijalankan setelah menyunting `index.html` atau `kunci.html`
+
+```bash
+node /tmp/uji_skrip.js
+```
+
+Ia mem-parse **seluruh blok `<script>` inline** di kedua halaman itu. Kedengarannya
+sepele, dan justru itu alasannya ada: **14 Sep 2026 satu `};` sisa** dari
+pengendali `#banner-close` / `#info-btn` yang dihapus tertinggal sendirian, dan
+**seluruh skrip `index.html` gagal di-parse**. Halamannya jadi kerangka statis:
+tanpa peta, tanpa daftar kapal, tanpa pesan galat yang terlihat — satu-satunya
+jejaknya cuma satu baris di konsol peramban.
+
+Yang membuatnya berbahaya: **seluruh uji lain tetap hijau.** Semuanya mengekstrak
+fungsi satu per satu lalu menjalankannya, jadi berkas yang tidak bisa di-parse
+utuh tidak pernah mereka sentuh. Gejalanya juga menipu — peta yang kosong terlihat
+seperti CDN Leaflet yang gagal dimuat, dan saya sempat mengejar teori itu lebih
+dulu. Karena itu `uji_skrip.js` bukan pelengkap: ia satu-satunya uji yang
+menjalankan berkasnya **utuh**.
+
+Bagian 2-nya membuktikan pemeriksanya memang bisa menolak, bukan cuma selalu
+bilang "bersih": ia menyisipkan `};` nyasar dan satu `{` yang tidak ditutup ke
+berkas yang ada sekarang. Kalau `/tmp/uji_skrip_rusak.html` masih ada — potret
+berkas yang benar-benar rusak hari itu, disimpan apa adanya — ia ikut diperiksa;
+berkas itu tinggal di `/tmp` dan boleh hilang, karena dua sisipan tadi selalu
+tersedia.
