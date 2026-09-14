@@ -124,9 +124,17 @@ mirip (Wonder / Oasis / Allure of the Seas). Kapal yang sudah dilacak ditandai
 "sudah ada" dan tombolnya mati.
 
 Tidak menemukan kapalnya? Buka **Tambah manual** di bawah hasil pencarian dan
-isi MMSI (wajib), IMO, dan nama. Jalur ini tidak memverifikasi apa pun ke situs
-sumber — kapal baru muncul di peta begitu pengecekan pertama berhasil, dan
-kalau MMSI-nya salah panelnya akan melaporkan error, bukan posisi palsu.
+isi MMSI (wajib), IMO, dan nama.
+
+**MMSI 9 digit, IMO 7 digit — jangan tertukar.** Ini kesalahan yang paling
+mudah terjadi: menyalin IMO ke kolom MMSI. Sekarang ditolak dengan pesan yang
+menjelaskannya. Sebelumnya nilai 7 digit itu **diterima diam-diam** sebagai
+kapal hantu yang tidak pernah punya posisi — UI tetap bilang "Mulai melacak",
+dan tidak ada satu pun petunjuk kenapa kapalnya tidak muncul di peta.
+
+Jalur manual tidak memverifikasi apa pun ke situs sumber — kapal baru muncul di
+peta begitu pengecekan pertama berhasil, dan kalau MMSI-nya salah (tapi tetap 9
+digit) panelnya akan melaporkan error, bukan posisi palsu.
 
 Kapal baru **langsung dicek satu kali** saat ditambahkan, dan polling yang
 sedang menunggu dibangunkan supaya iramanya dihitung ulang saat itu juga.

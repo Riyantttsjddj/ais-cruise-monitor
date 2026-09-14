@@ -648,6 +648,18 @@ class Store:
         mmsi = str(item.get("mmsi") or "").strip()
         if not mmsi.isdigit():
             return "MMSI harus berupa angka"
+        # MMSI selalu 9 digit (ITU-R M.585), sedangkan IMO selalu 7 digit. Nilai
+        # 7 digit di kolom MMSI hampir pasti IMO yang salah tempat.
+        #
+        # Ini perlu ditolak di depan, bukan diterima diam-diam: kapal hantu
+        # seperti itu lolos, UI bilang "Mulai melacak", lalu tidak pernah punya
+        # posisi karena memang tidak ada kapal dengan nomor itu — dan tidak ada
+        # satu pun pesan kesalahan yang menjelaskan kenapa.
+        if len(mmsi) != 9:
+            if len(mmsi) == 7:
+                return (f"MMSI harus 9 digit — {mmsi} panjangnya 7 digit, "
+                        f"jadi itu IMO, bukan MMSI. Isi kolom IMO, bukan MMSI.")
+            return f"MMSI harus 9 digit (yang diisi {len(mmsi)} digit)"
         # IMO yang tidak 7 digit dibuang, bukan disimpan apa adanya: nilai
         # sampah akan membuat cadangan CruiseMapper menanyakan kapal yang salah.
         imo = str(item.get("imo") or "").strip()
