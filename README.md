@@ -358,7 +358,7 @@ berjalan di Vercel — ini arsitektur yang berbeda, dengan kemunduran nyata:
 
 | | Lokal | Vercel |
 |---|---|---|
-| Pembaruan posisi | **6 detik** (300 saat sandar) | **5 menit**, tidak adaptif |
+| Pembaruan posisi | **6 detik** (300 saat sandar) | **10 menit–5 jam**, tergantung kapan halaman dibuka |
 | Cara browser menerima data | SSE, didorong saat berubah | polling tiap 30 detik |
 | Tombol 🔄 Cek | mengecek saat itu juga (~3 detik) | **meminta**, lalu menunggu ~20–60 detik |
 | Jejak lintasan | tersimpan di komputer Anda | tersimpan di repo, publik |
@@ -375,8 +375,9 @@ atas data yang umurnya beberapa jam. Yang benar-benar terasa adalah tombol
 ```
 GitHub Actions                     Vercel
 ┌──────────────────────┐          ┌────────────────────────┐
-│ poll.yml tiap 5 mnt  │          │ index.html (statis)    │
-│  tracker.py --once   │          │                        │
+│ poll.yml             │          │ index.html (statis)    │
+│  jadwal + diminta    │          │                        │
+│  tracker.py --once   │          │ api/search  api/add    │
 │         ↓            │          │ api/search  api/add    │
 │  branch `data`  ─────┼── dibaca │ api/remove  api/refresh│
 │  data.json           │    oleh  │        ↓               │
@@ -389,7 +390,7 @@ Yang penting: **`data.json` bentuknya sama persis dengan `/api/state`**. Itu
 disengaja, supaya `apply()` di `index.html` tidak perlu tahu bedanya.
 
 Branch `data` selalu berisi **tepat satu commit** (di-force-push tiap kali),
-jadi repo tidak membengkak oleh 288 commit sehari. Branch itu hanya berisi
+jadi repo tidak membengkak oleh ratusan commit sehari. Branch itu hanya berisi
 data, tidak ada kode.
 
 ### Langkah-langkahnya
@@ -480,12 +481,30 @@ Dua hal soal Actions yang perlu diketahui:
 - Jadwalnya **bisa tertunda saat beban tinggi**, terutama di awal jam. Karena
   itu cronnya ditulis `2-57/5 * * * *`, bukan `*/5` — pola pertama tidak pernah
   jatuh tepat di menit :00.
+- **Yang pertama itu bukan sekadar teori, dan akibatnya jauh lebih besar daripada
+  "tertunda".** Terukur pada repo ini: dalam 11 jam pertama sejak workflow
+  dibuat, jadwal yang meminta 288 run/hari itu hanya menghasilkan **4 run** —
+  pukul 21:45, 23:36, 01:36, dan 07:02 UTC. Jarak antar-run 1 jam 50 menit, 2
+  jam, lalu 5 jam 26 menit. Ekspresi cronnya **bukan** penyebabnya: sudah diuji
+  banding dengan ekspresi kedua, dan saat itu dua-duanya sama-sama nol lalu
+  dua-duanya mulai jalan sendiri setelah beberapa jam. Jadi jangan buang waktu
+  meneliti YAML-nya.
+- Karena itu kesegaran data **tidak boleh bersandar pada jadwal itu saja.**
+  Halaman menyegarkan diri: kalau snapshot terakhir sudah lebih tua dari 10
+  menit saat halaman dibuka, ia meminta satu run sendiri (jalur yang sama dengan
+  tombol 🔄 — terbukti selesai dalam ~20 detik), dengan jeda 5 menit per peramban
+  supaya tidak membanjiri GitHub. Selama halamannya sesekali dibuka, datanya ikut
+  segar.
 - Workflow terjadwal di repo publik **dimatikan otomatis setelah 60 hari tanpa
-  aktivitas repo**. Karena `poll` mendorong ke branch `data` tiap 5 menit, itu
+  aktivitas repo**. Karena `poll` mendorong ke branch `data` tiap kali jalan, itu
   mestinya sudah cukup — tapi tidak jelas apakah dorongan dari `GITHUB_TOKEN`
   dihitung sebagai "aktivitas". Karena itu ada `heartbeat.yml`: satu commit
   kosong tiap Senin sebagai asuransi. Kalau ternyata tidak perlu, ia hanya
   menambah 52 commit kosong setahun.
+
+Singkatnya: **jangan andalkan jadwal GitHub untuk ketepatan waktu.** Yang bisa
+diandalkan adalah tombol 🔄 dan penyegaran-saat-dibuka; jadwalnya sendiri
+berfungsi sebagai jaring pengaman, bukan sebagai metronom.
 
 ### Kalau disalahgunakan
 
@@ -556,7 +575,7 @@ riwayat.
 | `vlib.py` | Utilitas bersama fungsi Vercel: GitHub API, bentuk balasan, pembatas laju |
 | `api/*.py` | Satu berkas per endpoint Vercel |
 | `vercel.json` | Konfigurasi Vercel: durasi maksimum tiap fungsi |
-| `.github/workflows/poll.yml` | Pengganti `poll_loop` di Vercel — jalan tiap 5 menit |
+| `.github/workflows/poll.yml` | Pengganti `poll_loop` di Vercel — diminta tiap 5 menit, tapi GitHub memberikannya jauh lebih jarang |
 | `.github/workflows/heartbeat.yml` | Commit kosong mingguan, asuransi agar workflow terjadwal tidak dimatikan |
 | `.github/workflows/probe.yml` | Diagnosis sekali jalan: apakah Cloudflare menerima runner GitHub |
 

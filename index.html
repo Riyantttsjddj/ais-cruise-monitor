@@ -909,7 +909,10 @@
       // dan halaman tampak beku walau polling-nya jalan. Server lokal tidak
       // memasalahkan query tambahan — ia memotongnya di "?".
       return fetch(url + "?t=" + Date.now());
-    }).then(function (r) { return r.json(); }).then(apply).catch(function () {});
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      apply(d);
+      jagaKesegaran();
+    }).catch(function () {});
   }
 
   // ------------------------------------------------------------------ SSE
@@ -941,9 +944,42 @@
 
   // Jeda polling di versi Vercel. Sengaja lebih rapat daripada irama poller-nya
   // (5 menit): 30 detik membuat data baru muncul cepat setelah runner selesai,
-  // dan biayanya satu permintaan 3,5 KB ke CDN GitHub. Yang TIDAK dilakukan
-  // adalah mempercepat datanya sendiri — itu tetap ditentukan jadwal Actions.
+  // dan biayanya satu permintaan 3,5 KB ke CDN GitHub.
   var JEDA_JAUH = 30000;
+
+  // ------------------------------------------------- penyegaran saat dibuka
+  // Jadwal GitHub Actions terbukti jauh lebih jarang daripada yang diminta.
+  // Yang diminta 288 kali sehari (`2-57/5 * * * *`); yang benar-benar jalan
+  // hanya 4 kali dalam 11 jam pertama: 21:45, 23:36, 01:36, lalu 07:02 UTC.
+  // Ekspresi cronnya bukan penyebabnya — sudah diuji banding dengan ekspresi
+  // kedua dan dua-duanya sama-sama nol saat itu, lalu dua-duanya mulai jalan
+  // sendiri setelah beberapa jam. Memang begitu penjadwal GitHub: run
+  // terjadwal ditunda, dan sebagian dibuang, saat bebannya tinggi.
+  //
+  // Karena itu kesegaran data tidak lagi bersandar pada jadwal itu seorang
+  // diri. Setiap kali halaman ini dibuka dan datanya sudah basi, ia meminta
+  // satu run — persis yang dikerjakan tombol 🔄, dan itu terbukti selesai
+  // dalam ~20 detik. Jadi selama halaman ini sesekali dibuka, datanya ikut
+  // segar; kalau tidak ada yang membuka, tidak ada yang dirugikan.
+  var BATAS_BASI = 600000;    // 10 menit — dua kali irama jadwal yang diminta
+  var JEDA_MEMINTA = 300000;  // 5 menit — satu peramban tidak boleh membanjiri
+  var terakhirMinta = 0;
+
+  function jagaKesegaran() {
+    // Versi lokal punya poller sendiri dan /api/refresh-nya bekerja seketika;
+    // tidak ada yang perlu diminta ke GitHub dari sana.
+    if (MODE_LOKAL || !serverTime) return;
+    if (Date.now() - serverTime * 1000 < BATAS_BASI) return;
+    // Dua syarat di atas sudah menahan hampir semua pengulangan. Yang ini
+    // menahan sisanya: halaman yang dibiarkan terbuka dan polling tiap 30 detik
+    // akan terus melihat data yang sama-sama basi sampai run-nya selesai, dan
+    // tanpa jeda ini ia akan meminta ulang tiap 30 detik.
+    if (Date.now() - terakhirMinta < JEDA_MEMINTA) return;
+    terakhirMinta = Date.now();
+    // Diam-diam: pil statusnya milik apply(), dan kalau permintaannya gagal
+    // tidak ada yang perlu diberitahukan ke pengguna.
+    fetch("/api/refresh", { method: "GET" }).catch(function () {});
+  }
 
   // -------------------------------------------------------------- interaksi
   function togglePanel() {
