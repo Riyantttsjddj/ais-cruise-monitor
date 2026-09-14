@@ -112,7 +112,7 @@ lokal, dan kalau disebut ia **menang** atas `ships.json`.
 Kalau mau selalu rapat tanpa adaptif: `--idle-interval 0`.
 Kalau mau hemat penuh (mis. untuk pantauan jangka panjang): `--interval 90 --idle-interval 600`.
 
-Tombol **🔄 Cek** di antarmuka memaksa pengecekan kapan saja tanpa menunggu
+Tombol **🔄 Refresh lokasi terbaru** di antarmuka memaksa pengecekan kapan saja tanpa menunggu
 jadwal — berguna justru saat mode sandar sedang longgar.
 
 ---
@@ -280,7 +280,7 @@ MyShipTracking.
 | **3 / 8** (klik) | Buka kotak **Batas jumlah kapal** untuk menyetel berapa kapal yang boleh dilacak. Angkanya berubah warna kalau batasnya sedang menahan |
 | × (di baris kapal) | Hapus kapal — perlu dua ketukan |
 | 🗺️ Peta | Ganti lapisan: terang → satelit → gelap |
-| 🔄 Cek | **Polling manual** — paksa pengecekan kapal yang sedang dipilih, tanpa menunggu jadwal |
+| 🔄 Refresh lokasi terbaru | **Polling manual** — paksa pengecekan kapal yang sedang dipilih, tanpa menunggu jadwal |
 | 🎯 Ikuti | Peta mengikuti posisi kapal |
 | 〰️ Jejak | Tampilkan/sembunyikan garis lintasan |
 | ℹ️ Info | Munculkan lagi catatan keterlambatan data setelah disembunyikan |
@@ -319,7 +319,7 @@ yang bisa dibuka-tutup:
 ```
 ┌──────────────────────────────┐
 │ ⚓ Lacak Kapal   [status]     │  ← pil status (jam disembunyikan)
-│ [Peta][Cek][Ikuti][Jejak]…   │  ← tombol pindah ke atas, rata kiri
+│ [Peta][Refresh][Ikuti][Jejak]│  ← tombol pindah ke atas, rata kiri
 │                              │
 │           PETA               │
 │                              │
@@ -348,7 +348,7 @@ yang bisa dibuka-tutup:
 Perubahan ukuran jendela ditangani otomatis (diredam 250 ms) — tidak perlu
 muat ulang halaman setelah memutar ponsel.
 
-Tombol **🔄 Cek** melaporkan hasilnya, bukan sekadar "sudah dicek":
+Tombol **🔄 Refresh lokasi terbaru** melaporkan hasilnya, bukan sekadar "sudah dicek":
 `Laporan baru: 2026-09-13 14:20` kalau memang ada posisi baru, atau
 `Sudah dicek — kapal belum kirim laporan baru (masih 2026-09-13 10:43)`
 kalau tidak ada. Ini penting supaya Anda tidak salah menyimpulkan bahwa
@@ -400,7 +400,7 @@ berjalan di Vercel — ini arsitektur yang berbeda, dengan kemunduran nyata:
 |---|---|---|
 | Pembaruan posisi | **6 detik** (300 saat sandar) | **10 menit–5 jam**, tergantung kapan halaman dibuka |
 | Cara browser menerima data | SSE, didorong saat berubah | polling tiap 30 detik |
-| Tombol 🔄 Cek | mengecek saat itu juga (~3 detik) | **meminta**, lalu menunggu **~17–30 detik** (lewat `/api/fresh`, bukan CDN) |
+| Tombol 🔄 Refresh lokasi terbaru | mengecek saat itu juga (~3 detik) | **meminta**, lalu menunggu **~17–30 detik** (lewat `/api/fresh`, bukan CDN) |
 | Jejak lintasan | tersimpan di komputer Anda | tersimpan di repo, publik |
 | Tambah/hapus kapal | tulis ke `ships.json` lokal | commit ke repo, perlu token |
 | Butuh akun | tidak | GitHub + Vercel |
@@ -408,9 +408,9 @@ berjalan di Vercel — ini arsitektur yang berbeda, dengan kemunduran nyata:
 Hiburannya: data dari situs sumbernya sendiri tertinggal berjam-jam (pernah
 terukur `age` ≈ 7 jam). Selisih 6 detik dan 5 menit praktis tidak terasa di
 atas data yang umurnya beberapa jam. Yang benar-benar terasa adalah tombol
-🔄 Cek, yang tidak lagi instan.
+🔄 Refresh lokasi terbaru, yang tidak lagi instan.
 
-### Kenapa 🔄 Cek menunggu lewat `/api/fresh`, bukan berkas mentahnya
+### Kenapa 🔄 Refresh lokasi terbaru menunggu lewat `/api/fresh`, bukan berkas mentahnya
 
 Tombol itu meminta GitHub menjalankan poller, lalu harus tahu kapan run-nya
 selesai. Cara yang wajar — membaca ulang `data.json` dari
@@ -460,7 +460,7 @@ GitHub Actions                     Vercel
 │  jadwal + diminta    │          │                        │
 │  tracker.py --once   │          │ api/search  api/add    │
 │         ↓            │          │ api/remove  api/limit  │
-│  branch `data`  ─────┼── dibaca │ api/refresh  api/fresh  │
+│  branch `data`  ─────┼── dibaca │ api/refresh  api/fresh │
 │  data.json           │    oleh  │        ↓               │
 │  state.json          │          │  GitHub Contents API   │
 └──────────────────────┘          │  → commit ships.json   │
@@ -489,7 +489,7 @@ dengan akses hanya ke repo ini dan dua izin:
 | Izin | Untuk apa |
 |---|---|
 | **Contents: Read and write** | meng-commit `ships.json` saat kapal ditambah/dihapus |
-| **Actions: Read and write** | memicu `poll.yml` saat tombol 🔄 Cek ditekan |
+| **Actions: Read and write** | memicu `poll.yml` saat tombol 🔄 Refresh lokasi terbaru ditekan |
 
 Token ini **hanya dipakai di sisi server** (fungsi Vercel). Ia tidak pernah
 sampai ke browser.
@@ -524,7 +524,7 @@ pustaka standar Python.
 | `GH_REPO` | `Riyantttsjddj/ais-cruise-monitor` (pemilik/nama) |
 
 Tanpa keduanya, halaman tetap tampil dan petanya tetap jalan — yang mati hanya
-tambah/hapus/🔄 Cek, dengan pesan yang menjelaskan penyebabnya.
+tambah/hapus/🔄 Refresh lokasi terbaru, dengan pesan yang menjelaskan penyebabnya.
 
 **5. Periksa.** Buka `https://<nama-anda>.vercel.app/api/probe`. Balasannya
 JSON dan memeriksa tiga hal yang tidak bisa dipastikan dari sini:

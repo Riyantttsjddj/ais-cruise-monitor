@@ -265,7 +265,7 @@
     position:absolute;right:16px;bottom:96px;z-index:550;
     display:flex;flex-direction:column;gap:8px;align-items:flex-end
   }
-  .btnrow{display:flex;gap:8px}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
   .btn{
     padding:9px 13px;border-radius:11px;cursor:pointer;font-size:12.5px;font-weight:650;
     background:var(--panel);border:1px solid var(--line);color:var(--ink-dim);
@@ -476,7 +476,7 @@
 <div id="controls">
   <div class="btnrow">
     <div class="btn small" id="layer-btn">🗺️ Peta</div>
-    <div class="btn small" id="refresh-btn">🔄 Cek</div>
+    <div class="btn small" id="refresh-btn" title="Ambil lokasi terbaru dari sumbernya sekarang">🔄 Refresh lokasi terbaru</div>
     <div class="btn small" id="follow-btn">🎯 Ikuti</div>
     <div class="btn small" id="trail-btn">〰️ Jejak</div>
     <div class="btn small" id="info-btn" title="Tampilkan lagi catatan keterlambatan data">ℹ️ Info</div>
@@ -1007,7 +1007,7 @@
     var st = data.status || {};
     statusTerakhir = st;
     if (st.max_ships_plafon) plafonBatas = st.max_ships_plafon;
-    // Dicatat supaya tombol 🔄 Cek di versi Vercel bisa membedakan "data sudah
+    // Dicatat supaya tombol 🔄 Refresh lokasi terbaru di versi Vercel bisa membedakan "data sudah
     // benar-benar berganti" dari "permintaan sudah dikirim".
     if (data.server_time) serverTime = data.server_time;
     var pill = $("conn");
@@ -1425,7 +1425,7 @@
         return MODE_LOKAL ? cekSekarang(before) : mintaCek(b, before);
       })
       .catch(function () { toast("Gagal memeriksa sumber"); })
-      .then(function () { refreshBusy = false; b.textContent = "🔄 Cek"; });
+      .then(function () { refreshBusy = false; b.textContent = "🔄 Refresh lokasi terbaru"; });
   };
 
   $("banner-close").onclick = function () {
