@@ -224,7 +224,12 @@ def Store_dari(cfg: dict):
              if isinstance(s, dict) and s.get("mmsi") is not None]
     if not ships:
         raise ApiError("ships.json di repo tidak memuat kapal apa pun", 500)
-    return tracker.Store(ships, Path("/tmp/tidak-ada-state.json"))
+    # Batasnya HARUS diteruskan dari cfg. Sampai ini diperbaiki, Store dibangun
+    # dengan bawaan 8 di sini, sehingga menyetel "max_ships" di ships.json tidak
+    # berpengaruh apa pun pada versi Vercel — dan tidak ada satu pun tanda yang
+    # membedakannya dari "batasnya memang 8".
+    return tracker.Store(ships, Path("/tmp/tidak-ada-state.json"),
+                         max_ships=tracker.batas_dari_cfg(cfg))
 
 
 def picu_poll():

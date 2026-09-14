@@ -553,11 +553,70 @@ class Ship:
         self.distance_nm = total
 
 
+# Plafon jumlah kapal yang boleh dilacak. Bukan angka keramat — ini batas
+# kesopanan terhadap situs sumbernya: tiap kapal berarti satu permintaan HTTP
+# per putaran, dan Fetcher hanya mengizinkan satu permintaan per 5 detik. Di
+# angka 20 saja satu putaran sudah butuh ~100 detik, lebih lama daripada jarak
+# antar-jadwalnya sendiri. Karena itu batasnya bisa diturunkan sesuka hati, tapi
+# tidak dinaikkan melewati ini.
+BATAS_MAKS = 20
+BATAS_BAWAAN = 8
+
+
+def batas_dari_cfg(cfg: dict) -> int:
+    """Jumlah kapal maksimum menurut ships.json, dijepit ke rentang yang sah.
+
+    Dipakai bersama oleh `main()` versi lokal dan `vlib.Store_dari()` versi
+    Vercel. Sebelum ini versi Vercel selalu memakai bawaan 8 karena tidak
+    meneruskan apa pun, jadi menyetel batas di ships.json tidak berpengaruh
+    sama sekali di sana — persis jenis perbedaan senyap yang paling mahal.
+    """
+    try:
+        n = int(cfg.get("max_ships"))
+    except (TypeError, ValueError):
+        return BATAS_BAWAAN
+    return max(1, min(BATAS_MAKS, n))
+
+
+def set_batas(store, mentah) -> str:
+    """Terapkan batas baru dari nilai mentah. Kembalikan pesan error ("" = ok).
+
+    Dipakai bersama oleh rute `/api/limit` versi lokal dan versi Vercel, supaya
+    rentang yang sah dan alasan di baliknya hanya ditulis di satu tempat —
+    endpoint yang sama tidak boleh berperilaku beda antara dua mode.
+
+    Menurunkan batas DI BAWAH jumlah kapal yang ada sengaja diizinkan: kapal
+    yang sudah dilacak tetap dilacak, yang ditahan hanya penambahan baru. Itu
+    mengikuti perilaku `--max-ships` versi lokal, dan menghapus kapal diam-diam
+    jauh lebih buruk daripada sekadar menahan penambahan.
+    """
+    teks = str(mentah if mentah is not None else "").strip()
+    try:
+        n = int(teks)
+    except ValueError:
+        return f"Batas harus berupa angka bulat (yang dikirim: {teks or 'kosong'})"
+    if n < 1:
+        return "Batas paling sedikit 1 kapal"
+    if n > BATAS_MAKS:
+        # Alasannya disebut, bukan sekadar "terlalu besar": pengguna berhak tahu
+        # ini batas kesopanan terhadap situs sumbernya, bukan angka karangan.
+        return (f"Batas paling banyak {BATAS_MAKS} kapal. Tiap kapal menambah "
+                f"satu permintaan per putaran, dan situs sumber hanya "
+                f"mengizinkan satu permintaan per 5 detik — di atas "
+                f"{BATAS_MAKS}, satu putaran jadi lebih lama daripada jarak "
+                f"antar-jadwalnya sendiri.")
+    store.max_ships = max(1, min(BATAS_MAKS, n))
+    return ""
+
+
 class Store:
     def __init__(self, ships_cfg, state_path: Path, max_ships: int = 8):
         self.lock = threading.RLock()
         self.state_path = state_path
-        self.max_ships = max_ships
+        # Dijepit di sini juga, bukan hanya di batas_dari_cfg(): Store bisa
+        # dibangun langsung (versi lokal, uji) dan nilai di luar rentang akan
+        # lolos ke seluruh sistem kalau hanya satu pintu yang menjepitnya.
+        self.max_ships = max(1, min(BATAS_MAKS, int(max_ships)))
         self.ships: dict[str, Ship] = {}
         for item in ships_cfg:
             mmsi = str(item["mmsi"])
@@ -762,6 +821,10 @@ class Store:
         status = dict(self.status)
         status["ships"] = len(self.ships)
         status["max_ships"] = self.max_ships
+        # Plafonnya ikut dikirim supaya halaman tidak perlu menyalin angka 20.
+        # Kalau plafon berubah di sini, kotak "atur batas" di UI ikut berubah
+        # sendiri — tidak ada dua angka yang bisa berbeda diam-diam.
+        status["max_ships_plafon"] = BATAS_MAKS
         return {
             "type": "snapshot",
             "server_time": now,
@@ -807,6 +870,11 @@ def config_payload(cfg: dict, store: Store) -> dict:
                     item[key] = value
             ships.append({k: v for k, v in item.items() if v not in ("", None)})
         cfg["ships"] = ships
+        # Batasnya ikut ditulis supaya ia bertahan di ships.json tanpa jalur
+        # tulis kedua. config_payload() sudah mempertahankan kunci lain apa
+        # adanya, jadi menambah satu kunci di sini tidak menyentuh "_catatan"
+        # atau "bbox".
+        cfg["max_ships"] = store.max_ships
     return cfg
 
 
@@ -1110,6 +1178,20 @@ class Handler(BaseHTTPRequestHandler):
             self.wake.set()
         self._json(200, {"ok": True, "mmsi": mmsi})
 
+    def _api_limit(self):
+        err = set_batas(self.store, self._query().get("max"))
+        if err:
+            self._json(409, {"ok": False, "error": err})
+            return
+        save_config(self.config_path, self.store)
+        print(f"[armada] batas kapal jadi {self.store.max_ships}")
+        self.store.broadcast()
+        # Tidak ada poll_once() di sini: menaikkan batas tidak menambah kapal
+        # apa pun, dan menurunkannya tidak mengeluarkan kapal yang sudah ada.
+        # Jadi tidak ada yang perlu segera diambil — beda dengan _api_add.
+        self._json(200, {"ok": True, "max_ships": self.store.max_ships,
+                         "ships": len(self.store.ships)})
+
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
@@ -1123,6 +1205,8 @@ class Handler(BaseHTTPRequestHandler):
             self._api_add()
         elif path == "/api/remove":
             self._api_remove()
+        elif path == "/api/limit":
+            self._api_limit()
         elif path == "/api/refresh":
             threading.Thread(target=poll_once,
                              args=(self.store, self.store.fetcher), daemon=True).start()
@@ -1171,14 +1255,19 @@ class Server(ThreadingHTTPServer):
 # -------------------------------------------------------------------- main
 
 
-def load_config(path: Path):
+def load_config(path: Path) -> dict:
+    """Baca ships.json dan kembalikan ISI BERKASNYA UTUH.
+
+    Sengaja seluruh dict, bukan hanya array `ships`: `max_ships` dan kunci
+    tulisan tangan lain ada di tingkat atas, dan pemanggil yang hanya menerima
+    array kapal tidak akan pernah bisa membacanya.
+    """
     if not path.exists():
         sys.exit(f"Config {path} tidak ada.")
     cfg = json.loads(path.read_text())
-    ships = cfg.get("ships") or []
-    if not ships:
+    if not isinstance(cfg, dict) or not (cfg.get("ships") or []):
         sys.exit(f"Tidak ada kapal di {path}.")
-    return ships
+    return cfg
 
 
 def main():
@@ -1201,10 +1290,12 @@ def main():
                         "(default 300). Isi 0 untuk mematikan mode adaptif")
     p.add_argument("--idle-speed", type=float, default=0.5,
                    help="ambang kecepatan (knot) di bawah ini dianggap sandar (default 0.5)")
-    p.add_argument("--max-ships", type=int, default=8,
-                   help="batas jumlah kapal yang dilacak (default 8). Tiap kapal "
-                        "menambah satu permintaan per putaran, dan situs sumber "
-                        "hanya mengizinkan satu permintaan per 5 detik")
+    p.add_argument("--max-ships", type=int, default=None,
+                   help=f"batas jumlah kapal yang dilacak (1–{BATAS_MAKS}). "
+                        f"Kalau tidak disebut, dipakai nilai \"max_ships\" di "
+                        f"ships.json; kalau itu juga tidak ada, {BATAS_BAWAAN}. "
+                        f"Tiap kapal menambah satu permintaan per putaran, dan "
+                        f"situs sumber hanya mengizinkan satu permintaan per 5 detik")
     p.add_argument("--ships", default=str(HERE / "ships.json"))
     p.add_argument("--state", default=str(HERE / "state.json"))
     p.add_argument("--once", action="store_true",
@@ -1217,10 +1308,15 @@ def main():
     args = p.parse_args()
 
     cfg_path = Path(args.ships)
-    store = Store(load_config(cfg_path), Path(args.state), max_ships=args.max_ships)
-    if len(store.ships) > args.max_ships:
+    cfg = load_config(cfg_path)
+    # Bawaan --max-ships sengaja None, bukan 8: tanpa itu, "tidak disebut" dan
+    # "disebut 8" tidak bisa dibedakan, flag-nya selalu menang, dan nilai di
+    # ships.json tidak akan pernah terpakai.
+    batas = args.max_ships if args.max_ships is not None else batas_dari_cfg(cfg)
+    store = Store(cfg["ships"], Path(args.state), max_ships=batas)
+    if len(store.ships) > store.max_ships:
         print(f"[peringatan] {cfg_path.name} memuat {len(store.ships)} kapal, "
-              f"melebihi batas --max-ships {args.max_ships}. Semuanya tetap "
+              f"melebihi batas {store.max_ships}. Semuanya tetap "
               f"dilacak, tapi penambahan baru akan ditolak.", file=sys.stderr)
     fetcher = Fetcher()
     store.fetcher = fetcher

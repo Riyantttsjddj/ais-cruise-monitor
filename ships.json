@@ -1,5 +1,7 @@
 {
   "_catatan": "Tambahkan kapal lain ke array 'ships' (MMSI wajib, sisanya opsional sebagai verifikasi).",
+  "_catatan_max_ships": "Batas jumlah kapal yang dilacak (1-20). Bisa diubah di sini atau lewat tombol di halaman. Tiap kapal menambah satu permintaan per putaran.",
+  "max_ships": 8,
   "bbox": [
     [
       -90,

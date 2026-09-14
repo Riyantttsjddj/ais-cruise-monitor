@@ -152,6 +152,10 @@
   }
   .fleet-item:hover{background:rgba(120,170,220,.11)}
   .fleet-item.active{border-color:var(--accent);background:rgba(61,220,151,.1)}
+  /* Titik warna: satu warna per kapal, sama dengan warna ikonnya di peta.
+     Tanpa ini, delapan ikon kapal yang bentuknya identik tidak bisa
+     dihubungkan dengan barisnya di daftar. */
+  .fleet-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
   .fleet-main{flex:1;min-width:0}
   .fleet-name{
     font-size:12.5px;font-weight:650;
@@ -175,12 +179,15 @@
   #add-btn{width:100%;justify-content:center;margin-top:8px;text-align:center}
 
   /* --------------------------------------------------------- tambah kapal */
-  #addbox{
+  /* Satu aturan untuk dua kotak (#addbox dan #limitbox): kerangkanya sama,
+     isinya yang beda. Menyalin blok ini untuk kotak kedua berarti tiap
+     perbaikan tata letak harus dikerjakan dua kali. */
+  #addbox, #limitbox{
     position:fixed;inset:0;z-index:900;display:none;padding:20px;
     align-items:center;justify-content:center;
     background:rgba(4,10,16,.6);backdrop-filter:blur(3px)
   }
-  #addbox.show{display:flex}
+  #addbox.show, #limitbox.show{display:flex}
   .addbox-card{
     width:min(560px,100%);max-height:86vh;display:flex;flex-direction:column;
     background:var(--panel-solid);border:1px solid var(--line);border-radius:16px;
@@ -190,19 +197,36 @@
     display:flex;align-items:center;justify-content:space-between;
     padding:13px 16px;border-bottom:1px solid var(--line);font-size:14px
   }
-  #addbox-close{
+  .modal-close{
     width:30px;height:30px;line-height:1;border:0;border-radius:8px;cursor:pointer;
     background:none;color:var(--ink-dim);font-size:20px
   }
-  #addbox-close:hover{background:rgba(120,170,220,.15);color:var(--ink)}
+  .modal-close:hover{background:rgba(120,170,220,.15);color:var(--ink)}
   .addbox-body{padding:14px 16px 16px;overflow-y:auto}
   .searchrow{display:flex;gap:8px}
   .searchrow input{flex:1;min-width:0}
-  #addbox input{
+  #addbox input, #limitbox input{
     width:100%;padding:10px 12px;font:inherit;font-size:13px;border-radius:9px;
     background:rgba(8,16,24,.7);border:1px solid var(--line);color:var(--ink)
   }
-  #addbox input:focus{outline:none;border-color:var(--accent)}
+  #addbox input:focus, #limitbox input:focus{outline:none;border-color:var(--accent)}
+  /* --------------------------------------------------------- atur batas */
+  #fleet-count{
+    border:0;padding:2px 8px;border-radius:999px;cursor:pointer;font:inherit;
+    font-size:10.5px;font-weight:600;letter-spacing:.02em;
+    background:rgba(120,170,220,.16);color:var(--ink-dim)
+  }
+  #fleet-count:hover{background:rgba(120,170,220,.3);color:var(--ink)}
+  #fleet-count.penuh{background:rgba(255,170,80,.22);color:#ffc78a}
+  .limitrow{display:flex;gap:8px;align-items:center}
+  .limitrow input{flex:1;min-width:0}
+  .limit-quick{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .limit-quick div{
+    padding:6px 12px;border-radius:999px;cursor:pointer;font-size:12px;font-weight:600;
+    background:rgba(120,170,220,.1);border:1px solid var(--line)
+  }
+  .limit-quick div:hover{background:rgba(120,170,220,.24)}
+  .limit-quick div.aktif{border-color:var(--accent);background:rgba(61,220,151,.16)}
   .hint{font-size:11.5px;color:var(--ink-dim);margin:9px 0}
   #results{display:flex;flex-direction:column;gap:6px}
   .result{
@@ -281,6 +305,16 @@
   /* ------------------------------------------------------------- penanda kapal */
   .ship-icon{will-change:transform}
   .ship-icon svg{display:block;filter:drop-shadow(0 3px 6px rgba(0,0,0,.6))}
+  /* Pengecilan TIDAK BOLEH dikenakan pada .ship-icon: Leaflet memakai
+     `transform: translate3d(…)` di elemen akar itu untuk memindahkan penanda,
+     jadi menulis `transform` di sana akan menimpa posisinya dan semua kapal
+     menumpuk di satu titik. Yang di-scale adalah pembungkus di dalamnya. */
+  .ship-badan{position:relative;transform-origin:50% 50%;transition:transform .18s ease}
+  .ship-icon.kecil .ship-badan{transform:scale(.58)}
+  .ship-icon.kecil{opacity:.82}
+  /* Halo berdenyut hanya untuk kapal terpilih. Delapan halo berdenyut
+     bersamaan jadi ramai dan justru menyamarkan mana yang sedang dilihat. */
+  .ship-icon.kecil .ship-halo{display:none}
   .ship-halo{
     position:absolute;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;
     border-radius:50%;border:2px solid var(--accent);opacity:0;
@@ -365,7 +399,7 @@
     .leaflet-control-attribution{font-size:9px!important}
 
     /* Kotak tambah kapal jadi lembar penuh, sejalan dengan pola #panel. */
-    #addbox{padding:0;align-items:flex-end}
+    #addbox, #limitbox{padding:0;align-items:flex-end}
     .addbox-card{
       width:100%;max-height:88vh;border-radius:16px 16px 0 0;border-bottom:0
     }
@@ -402,7 +436,9 @@
     <div id="panel-collapse" title="Sembunyikan panel">▾</div>
   </div>
   <div class="panel-body">
-    <div class="section-title">Kapal dilacak <span id="fleet-count"></span></div>
+    <div class="section-title">Kapal dilacak
+      <button id="fleet-count" title="Atur berapa banyak kapal yang dilacak"></button>
+    </div>
     <div class="fleet" id="fleet"></div>
     <div class="btn small" id="add-btn">➕ Tambah kapal</div>
 
@@ -453,7 +489,7 @@
   <div class="addbox-card">
     <div class="addbox-head">
       <b>Tambah kapal</b>
-      <button id="addbox-close" title="Tutup">×</button>
+      <button id="addbox-close" class="modal-close" title="Tutup">×</button>
     </div>
     <div class="addbox-body">
       <div class="searchrow">
@@ -470,6 +506,29 @@
         <input id="m-name" placeholder="Nama kapal (opsional)">
         <div class="btn small" id="manual-btn">Tambahkan</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div id="limitbox">
+  <div class="addbox-card" style="width:min(430px,100%)">
+    <div class="addbox-head">
+      <b>Batas jumlah kapal</b>
+      <button id="limitbox-close" class="modal-close" title="Tutup">×</button>
+    </div>
+    <div class="addbox-body">
+      <div class="hint">
+        Berapa banyak kapal yang boleh dilacak sekaligus. Yang sudah dilacak
+        tidak ikut terhapus kalau angkanya diturunkan — hanya penambahan baru
+        yang ditahan.
+      </div>
+      <div class="limitrow">
+        <input id="limit-input" type="number" min="1" step="1"
+               inputmode="numeric" autocomplete="off">
+        <div class="btn small" id="limit-save">Simpan</div>
+      </div>
+      <div class="limit-quick" id="limit-quick"></div>
+      <div class="hint" id="limit-msg" style="margin-bottom:0"></div>
     </div>
   </div>
 </div>
@@ -495,7 +554,12 @@
 
   var STALE_SEC   = 6 * 3600;     // spanduk peringatan kalau data setua ini
   var TRAIL_GAP_S = 12 * 3600;    // jeda yang memutus garis jejak
-  var TRAIL_MAX   = 6000;         // titik maksimum yang digambar
+  var TRAIL_MAX   = 6000;         // titik maksimum untuk kapal TERPILIH
+  // Jejak kapal yang tidak terpilih dipotong jauh lebih pendek. TRAIL_MAX itu
+  // per kapal: delapan jejak penuh berarti ~48.000 titik polyline, dan Leaflet
+  // akan tersendat. Potongan pendek sudah cukup menunjukkan arah dan lintasan
+  // terkininya tanpa biaya penuhnya.
+  var TRAIL_MAX_LAIN = 400;
 
   var LAYERS = {
     "Peta": L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -537,31 +601,47 @@
   }
 
   var trailLayer = L.layerGroup().addTo(map);
-  var marker = null, markerRot = null, haloEl = null;
+  // Semua keadaan peta sekarang per-MMSI. Sebelumnya hanya ada satu `marker`
+  // dan satu `anim`, jadi walau delapan kapal dilacak, yang tergambar di peta
+  // tetap satu saja — itulah yang membuat "melacak banyak kapal" tidak terlihat.
+  var markers = {};              // mmsi -> {m: penanda Leaflet, rot: elemen SVG}
+  var anims = {};                // mmsi -> {lat,lon,hdg} posisi yang sedang digambar
+  var targets = {};              // mmsi -> {lat,lon,hdg} posisi yang dituju
   var follow = true, showTrail = true;
   var current = null;            // data kapal terpilih
   var selectedMmsi = null;       // MMSI kapal yang sedang ditampilkan
   var lastResults = [];          // hasil pencarian terakhir (untuk tombol +)
   var trailCache = {};           // mmsi -> array titik
   var serverTime = null;         // stempel waktu snapshot terakhir yang diterapkan
-  var anim = { lat: null, lon: null, hdg: 0 };
-  var target = { lat: null, lon: null, hdg: 0 };
   var haveFix = false;
+  var sudahFitAwal = false;      // fitBounds ke semua kapal, sekali saja
+  var warnaPeta = {};            // mmsi -> warna, diisi apply()
 
   // ------------------------------------------------------------ ikon kapal
-  var SHIP_SVG =
-    '<svg viewBox="0 0 32 64" width="26" height="52">' +
+  // Satu warna per kapal, dipakai di titik daftar DAN di ikon petanya supaya
+  // baris di daftar bisa dicocokkan dengan penanda di peta.
+  var PALET = ["#3ddc97", "#38bdf8", "#f59e0b", "#f472b6", "#a78bfa",
+               "#fb7185", "#4ade80", "#22d3ee", "#facc15", "#c084fc"];
+
+  function warnaUntuk(mmsi) { return warnaPeta[mmsi] || PALET[0]; }
+
+  function svgKapal(warna) {
+    return '<svg viewBox="0 0 32 64" width="26" height="52">' +
       '<path d="M16 2 L28 20 L28 50 L20 62 L12 62 L4 50 L4 20 Z" ' +
-            'fill="#3ddc97" stroke="#06231a" stroke-width="2" stroke-linejoin="round"/>' +
+            'fill="' + warna + '" stroke="#06231a" stroke-width="2" stroke-linejoin="round"/>' +
       '<path d="M16 12 L21 24 L11 24 Z" fill="#06231a" opacity=".55"/>' +
       '<rect x="11" y="30" width="10" height="12" rx="2" fill="#06231a" opacity=".45"/>' +
     '</svg>';
+  }
 
-  function makeIcon() {
+  // Dibuat dalam keadaan KECIL. Yang terpilih melepas kelas "kecil" lewat
+  // tandaiTerpilih(), jadi berpindah pilihan tidak perlu membuat ulang penanda.
+  function makeIcon(warna) {
     return L.divIcon({
-      className: "ship-icon halo-live",
-      html: '<div class="ship-halo"></div><div class="rot" style="transform-origin:50% 50%">' +
-            SHIP_SVG + "</div>",
+      className: "ship-icon halo-live kecil",
+      html: '<div class="ship-badan"><div class="ship-halo"></div>' +
+            '<div class="rot" style="transform-origin:50% 50%">' +
+            svgKapal(warna) + "</div></div>",
       iconSize: [26, 52],
       iconAnchor: [13, 26]
     });
@@ -606,8 +686,9 @@
   // ------------------------------------------------------------ panel kiri
   function renderFleet(data) {
     var ships = data.ships || [];
-    var max = (data.status && data.status.max_ships) || "?";
-    $("fleet-count").textContent = ships.length + " / " + max;
+    var status = data.status || {};
+    var max = status.max_ships || "?";
+    chiptext(ships.length, max);
 
     var html = "";
     for (var i = 0; i < ships.length; i++) {
@@ -617,6 +698,12 @@
       html += '<div class="fleet-item' +
                 (sh.mmsi === selectedMmsi ? " active" : "") +
                 '" data-mmsi="' + esc(sh.mmsi) + '">' +
+                // Titik warna ini yang menghubungkan baris daftar dengan
+                // ikonnya di peta. Warnanya HARUS dari warnaUntuk() yang sama
+                // dengan yang dipakai makeIcon(), kalau tidak dua kapal bisa
+                // tampil sebangun di dua tempat.
+                '<span class="fleet-dot" style="background:' +
+                  esc(warnaUntuk(sh.mmsi)) + '"></span>' +
                 '<div class="fleet-main">' +
                   '<div class="fleet-name">' + esc(sh.label || sh.mmsi) + "</div>" +
                   '<div class="fleet-sub">' + esc(sub) + "</div>" +
@@ -628,11 +715,97 @@
     $("fleet").innerHTML = html;
   }
 
+  // ---------------------------------------------------------- batas kapal
+  // Plafonnya datang dari server (status.max_ships_plafon), bukan ditulis 20
+  // di sini: kalau batas di tracker.py berubah, kotak ini ikut berubah sendiri.
+  var plafonBatas = 20;
+  // Snapshot status terakhir, disimpan supaya kotak batas bisa dibuka dengan
+  // angka yang berlaku sekarang tanpa harus menunggu putaran data berikutnya.
+  var statusTerakhir = null;
+
+  function chiptext(ada, maks) {
+    var el = $("fleet-count");
+    el.textContent = ada + " / " + maks;
+    // Penanda bahwa batasnya sedang menahan: daftar sudah sepenuh yang boleh.
+    el.classList.toggle("penuh", maks !== "?" && ada >= maks);
+  }
+
+  function renderQuick(maks) {
+    // Cukup beberapa pilihan cepat — yang menjawab "1 saja, 2, atau lebih".
+    var pilihan = [1, 2, 3, 5, 8, 12, 20].filter(function (n) {
+      return n <= plafonBatas;
+    });
+    if (pilihan.indexOf(plafonBatas) < 0) pilihan.push(plafonBatas);
+    var html = "";
+    for (var i = 0; i < pilihan.length; i++) {
+      html += '<div data-n="' + pilihan[i] + '"' +
+              (pilihan[i] === maks ? ' class="aktif"' : "") + ">" +
+              pilihan[i] + "</div>";
+    }
+    $("limit-quick").innerHTML = html;
+  }
+
+  function openLimit() {
+    var status = statusTerakhir || {};
+    var maks = status.max_ships || 8;
+    if (status.max_ships_plafon) plafonBatas = status.max_ships_plafon;
+    var inp = $("limit-input");
+    inp.max = plafonBatas;
+    inp.value = maks;
+    $("limit-msg").textContent = "Paling banyak " + plafonBatas +
+      " kapal — tiap kapal menambah satu permintaan per putaran ke situs sumbernya.";
+    renderQuick(maks);
+    $("limitbox").classList.add("show");
+    inp.focus();
+    inp.select();
+  }
+
+  function closeLimit() { $("limitbox").classList.remove("show"); }
+
+  function simpanBatas(n) {
+    n = parseInt(n, 10);
+    if (!(n >= 1) || n > plafonBatas) {
+      $("limit-msg").textContent = "Isi angka antara 1 dan " + plafonBatas + ".";
+      return;
+    }
+    var btn = $("limit-save");
+    btn.textContent = "…";
+    fetch("/api/limit?max=" + encodeURIComponent(n))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.ok) throw new Error((d && d.error) || "gagal menyetel batas");
+        closeLimit();
+        toast("Batas kapal jadi " + d.max_ships);
+        // pullFull() supaya chip dan daftarnya ikut angka yang benar-benar
+        // tersimpan di server, bukan yang baru saja diketik.
+        pullFull();
+      })
+      .catch(function (e) {
+        $("limit-msg").textContent = e.message || String(e);
+      })
+      .then(function () { btn.textContent = "Simpan"; });
+  }
+
+  $("fleet-count").onclick = openLimit;
+  $("limitbox-close").onclick = closeLimit;
+  $("limit-save").onclick = function () { simpanBatas($("limit-input").value); };
+  $("limit-input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") simpanBatas($("limit-input").value);
+  });
+  $("limit-quick").addEventListener("click", function (e) {
+    var t = e.target.closest("[data-n]");
+    if (t) simpanBatas(t.getAttribute("data-n"));
+  });
+  $("limitbox").addEventListener("click", function (e) {
+    if (e.target === $("limitbox")) closeLimit();   // klik di luar kartu
+  });
+
   function selectShip(mmsi) {
     if (mmsi === selectedMmsi) return;
     selectedMmsi = mmsi;
+    // Cukup ini: apply() yang mengosongkan animasi kapal terpilih dan
+    // memindahkan peta, jadi tidak ada dua tempat yang mengurus hal sama.
     haveFix = false;
-    anim.lat = null;
     pullFull();
   }
 
@@ -696,13 +869,13 @@
     if (cached.length > 25000) cached.splice(0, cached.length - 25000);
   }
 
-  function drawTrail() {
-    trailLayer.clearLayers();
-    if (!showTrail || !current) return;
-    var pts = trailCache[current.mmsi];
-    if (!pts || pts.length < 2) return;
+  // Memecah titik jejak menjadi segmen-segmen yang dipisah jeda panjang, lalu
+  // memotongnya ke sekitar `maks` titik. Dipisah dari drawTrail() supaya aturan
+  // pemotongan dan pemecahan hanya ada di satu tempat.
+  function segmenJejak(pts, maks) {
+    if (!pts || pts.length < 2) return [];
 
-    var step = Math.max(1, Math.ceil(pts.length / TRAIL_MAX));
+    var step = Math.max(1, Math.ceil(pts.length / maks));
     var segs = [], seg = [], prev = null;
     for (var i = 0; i < pts.length; i += step) {
       var p = pts[i];
@@ -714,52 +887,117 @@
     if (prev && pts[pts.length - 1][2] - prev[2] > TRAIL_GAP_S) {
       segs.push([[pts[pts.length - 1][0], pts[pts.length - 1][1]]]);
     }
+    return segs;
+  }
 
-    for (var k = 0; k < segs.length; k++) {
-      var isLatest = (k === segs.length - 1);
-      L.polyline(segs[k], {
-        color: isLatest ? "#3ddc97" : "#38bdf8",
-        weight: isLatest ? 3 : 2,
-        opacity: isLatest ? 0.95 : 0.35,
-        dashArray: isLatest ? null : "4 6",
-        lineJoin: "round",
-        interactive: false
-      }).addTo(trailLayer);
+  function drawTrail() {
+    trailLayer.clearLayers();
+    if (!showTrail) return;
+
+    for (var mmsi in trailCache) {
+      if (!trailCache.hasOwnProperty(mmsi)) continue;
+      // Kapal yang sudah tidak dilacak lagi jangan digambar. trailCache-nya
+      // sendiri sudah dibersihkan saat kapal dihapus, tapi kalau ada jalur
+      // penghapusan yang terlewat, di sini tidak akan terlihat.
+      if (!warnaPeta.hasOwnProperty(mmsi)) continue;
+
+      var terpilih = (mmsi === selectedMmsi);
+      var segs = segmenJejak(trailCache[mmsi], terpilih ? TRAIL_MAX : TRAIL_MAX_LAIN);
+      if (!segs.length) continue;
+
+      var warna = warnaUntuk(mmsi);
+      for (var k = 0; k < segs.length; k++) {
+        var isLatest = (k === segs.length - 1);
+        L.polyline(segs[k], {
+          color: warna,
+          weight: terpilih ? (isLatest ? 3 : 2) : 1.5,
+          opacity: terpilih ? (isLatest ? 0.95 : 0.35) : 0.28,
+          dashArray: (terpilih && !isLatest) ? "4 6" : null,
+          lineJoin: "round",
+          interactive: false
+        }).addTo(trailLayer);
+      }
     }
   }
 
   // -------------------------------------------------------------- animasi
   function ensureMarker(s) {
-    if (!marker) {
-      marker = L.marker([s.lat, s.lon], { icon: makeIcon(), keyboard: false }).addTo(map);
-      markerRot = marker.getElement().querySelector(".rot");
+    var m = markers[s.mmsi];
+    if (!m) {
+      var penanda = L.marker([s.lat, s.lon],
+                             { icon: makeIcon(warnaUntuk(s.mmsi)), keyboard: false })
+                      .addTo(map);
+      // Klik penanda = pilih kapal itu. Tanpa ini, satu-satunya cara berpindah
+      // kapal adalah barisnya di daftar, dan itu tidak terlihat oleh mata.
+      penanda.on("click", function () { selectShip(s.mmsi); });
+      m = markers[s.mmsi] = {
+        m: penanda,
+        rot: penanda.getElement().querySelector(".rot"),
+      };
+    }
+    return m;
+  }
+
+  function hapusMarker(mmsi) {
+    var m = markers[mmsi];
+    if (!m) return;
+    map.removeLayer(m.m);
+    // Ketiga peta ini harus dibersihkan bersamaan. Kalau `targets`-nya
+    // ketinggalan, step() akan terus mencoba menggerakkan penanda yang sudah
+    // tidak ada — dan kalau MMSI-nya dipakai lagi nanti, kapalnya akan
+    // meluncur dari posisi lama yang sudah basi.
+    delete markers[mmsi];
+    delete anims[mmsi];
+    delete targets[mmsi];
+  }
+
+  // Kelas "kecil" diatur di sini, bukan saat penanda dibuat, supaya berpindah
+  // pilihan tidak perlu membongkar-pasang penanda.
+  function tandaiTerpilih() {
+    for (var mmsi in markers) {
+      if (!markers.hasOwnProperty(mmsi)) continue;
+      var el = markers[mmsi].m.getElement();
+      if (!el) continue;
+      if (mmsi === selectedMmsi) el.classList.remove("kecil");
+      else el.classList.add("kecil");
     }
   }
 
   function step() {
     requestAnimationFrame(step);
-    if (target.lat == null) return;
 
-    if (anim.lat == null) {
-      anim.lat = target.lat; anim.lon = target.lon; anim.hdg = target.hdg;
-    } else {
-      // Lompatan besar = fix baru setelah jeda lama; jangan dianimasikan.
-      var jump = Math.abs(target.lat - anim.lat) + Math.abs(target.lon - anim.lon);
-      if (jump > 0.1) { anim.lat = target.lat; anim.lon = target.lon; }
-      anim.lat += (target.lat - anim.lat) * 0.09;
-      anim.lon += (target.lon - anim.lon) * 0.09;
+    for (var mmsi in targets) {
+      if (!targets.hasOwnProperty(mmsi)) continue;
+      var t = targets[mmsi];
+      var m = markers[mmsi];
+      if (!m || t.lat == null) continue;
+      var a = anims[mmsi];
+      if (!a) a = anims[mmsi] = { lat: null, lon: null, hdg: 0 };
+
+      if (a.lat == null) {
+        a.lat = t.lat; a.lon = t.lon; a.hdg = t.hdg;
+      } else {
+        // Lompatan besar = fix baru setelah jeda lama; jangan dianimasikan.
+        var jump = Math.abs(t.lat - a.lat) + Math.abs(t.lon - a.lon);
+        if (jump > 0.1) { a.lat = t.lat; a.lon = t.lon; }
+        a.lat += (t.lat - a.lat) * 0.09;
+        a.lon += (t.lon - a.lon) * 0.09;
+      }
+      a.hdg = lerpAngle(a.hdg, t.hdg, 0.12);
+
+      m.m.setLatLng([a.lat, a.lon]);
+      if (m.rot) m.rot.style.transform = "rotate(" + a.hdg + "deg)";
     }
-    anim.hdg = lerpAngle(anim.hdg, target.hdg, 0.12);
 
-    if (marker) {
-      marker.setLatLng([anim.lat, anim.lon]);
-      if (markerRot) markerRot.style.transform = "rotate(" + anim.hdg + "deg)";
-    }
-
-    if (follow && haveFix) {
-      var p = map.latLngToContainerPoint([anim.lat, anim.lon]);
-      var c = map.getSize().divideBy(2);
-      if (p.distanceTo(c) > 60) map.panTo([anim.lat, anim.lon], { animate: false });
+    // Peta hanya digeser mengikuti KAPAL TERPILIH. Kalau semua ikut menggeser,
+    // peta akan tersentak ke sana kemari dan tidak bisa dibaca.
+    if (follow && haveFix && selectedMmsi && anims[selectedMmsi]) {
+      var at = anims[selectedMmsi];
+      if (at.lat != null) {
+        var p = map.latLngToContainerPoint([at.lat, at.lon]);
+        var c = map.getSize().divideBy(2);
+        if (p.distanceTo(c) > 60) map.panTo([at.lat, at.lon], { animate: false });
+      }
     }
   }
 
@@ -767,6 +1005,8 @@
   function apply(data) {
     // status pengambilan data
     var st = data.status || {};
+    statusTerakhir = st;
+    if (st.max_ships_plafon) plafonBatas = st.max_ships_plafon;
     // Dicatat supaya tombol 🔄 Cek di versi Vercel bisa membedakan "data sudah
     // benar-benar berganti" dari "permintaan sudah dikirim".
     if (data.server_time) serverTime = data.server_time;
@@ -786,6 +1026,13 @@
 
     if (!data.ships || !data.ships.length) return;
 
+    // Warna ditetapkan menurut posisi di daftar, jadi baris ke-3 di panel
+    // selalu berwarna sama dengan penanda ke-3 di peta.
+    warnaPeta = {};
+    for (var w = 0; w < data.ships.length; w++) {
+      warnaPeta[data.ships[w].mmsi] = PALET[w % PALET.length];
+    }
+
     // Kapal yang ditampilkan: yang sedang dipilih, atau yang pertama kalau
     // belum ada pilihan / kapal pilihannya sudah tidak dilacak lagi.
     var s = null;
@@ -796,10 +1043,8 @@
 
     if (current && current.mmsi !== s.mmsi) {
       // Peta harus melompat ke kapal yang baru dipilih, bukan meluncur dari
-      // posisi kapal sebelumnya. `haveFix = false` memakai jalur snap yang
-      // sudah ada di bawah.
+      // posisi kapal sebelumnya. `haveFix = false` memakai jalur snap di bawah.
       haveFix = false;
-      anim.lat = null;
     }
 
     current = s;
@@ -807,7 +1052,34 @@
     // angka tetap, jadi titik acuannya disimpan di sini.
     current._ageAt = Date.now();
     renderFleet(data);
-    mergeTrail(s.mmsi, s.trail || [], s.trail_total || 0);
+
+    // SEMUA kapal digambar, bukan hanya yang terpilih — inilah "melacak banyak
+    // kapal sekaligus". Jejaknya juga dikumpulkan untuk semuanya, bukan hanya
+    // untuk yang terpilih, karena drawTrail() menggambar seluruh armada.
+    var semua = [];
+    for (var k = 0; k < data.ships.length; k++) {
+      var sh = data.ships[k];
+      mergeTrail(sh.mmsi, sh.trail || [], sh.trail_total || 0);
+      if (sh.lat == null || sh.lon == null) continue;
+      semua.push(sh);
+
+      ensureMarker(sh);
+      var t = targets[sh.mmsi];
+      if (!t) t = targets[sh.mmsi] = { lat: null, lon: null, hdg: 0 };
+      t.lat = sh.lat;
+      t.lon = sh.lon;
+      t.hdg = sh.heading == null ? (sh.cog == null ? t.hdg : sh.cog) : sh.heading;
+    }
+
+    // Penanda kapal yang sudah tidak dilacak lagi harus dibuang. Tanpa ini,
+    // kapal yang dihapus tetap nangkring di peta sampai halaman dimuat ulang —
+    // dan halaman ini tidak pernah dimuat ulang sendiri.
+    for (var lama in markers) {
+      if (!markers.hasOwnProperty(lama)) continue;
+      if (!warnaPeta.hasOwnProperty(lama)) hapusMarker(lama);
+    }
+    tandaiTerpilih();
+
     renderPanel(s, s.age);
 
     // tautan luar
@@ -816,19 +1088,31 @@
     $("lnk-cm").href = "https://www.cruisemapper.com/?imo=" + (s.imo || "");
 
     // peta
-    if (s.lat != null && s.lon != null) {
-      ensureMarker(s);
-      target.lat = s.lat;
-      target.lon = s.lon;
-      target.hdg = s.heading == null ? (s.cog == null ? target.hdg : s.cog) : s.heading;
-      if (!haveFix) {
-        haveFix = true;
-        anim.lat = null;                       // paksa snap ke posisi pertama
+    var punyaFix = (s.lat != null && s.lon != null);
+    var pel = markers[s.mmsi] && markers[s.mmsi].m.getElement();
+    if (pel) {
+      // Halo berdenyut menandakan kapalnya punya posisi. Hanya kapal terpilih
+      // yang halonya terlihat (lihat .ship-icon.kecil di CSS).
+      if (punyaFix) pel.classList.add("halo-live");
+      else pel.classList.remove("halo-live");
+    }
+
+    if (punyaFix && !haveFix) {
+      haveFix = true;
+      anims[s.mmsi] = null;                    // paksa snap ke posisi pertama
+      // Kali pertama, dan kapalnya lebih dari satu: tampilkan SEMUANYA
+      // sekaligus. Kalau langsung menempel ke satu kapal, kapal-kapal lain
+      // ada di luar layar dan "banyak kapal" itu tidak pernah terlihat.
+      // Sesudah ini peta kembali mengikuti kapal terpilih — kalau tidak, ia
+      // akan melompat jauh setiap kali pilihan berganti.
+      if (!sudahFitAwal && semua.length > 1) {
+        sudahFitAwal = true;
+        var b = [];
+        for (var q = 0; q < semua.length; q++) b.push([semua[q].lat, semua[q].lon]);
+        map.fitBounds(b, { padding: [60, 60], maxZoom: 11 });
+      } else {
         map.setView([s.lat, s.lon], 11);
       }
-      marker.getElement().classList.add("halo-live");
-    } else if (marker) {
-      marker.getElement().classList.remove("halo-live");
     }
 
     drawTrail();
@@ -1154,10 +1438,10 @@
         .then(function (d) {
           if (!d.ok) { toast(d.error || "Gagal menghapus"); x.textContent = "×"; return; }
           delete trailCache[mmsi];
+          hapusMarker(mmsi);
           if (selectedMmsi === mmsi) {
             selectedMmsi = null;      // apply() akan jatuh ke kapal pertama
             haveFix = false;
-            anim.lat = null;
           }
           toast("Berhenti melacak " + mmsi);
           pullFull();
@@ -1184,7 +1468,9 @@
     if (e.target === $("addbox")) closeAdd();   // klik di luar kartu
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && $("addbox").classList.contains("show")) closeAdd();
+    if (e.key !== "Escape") return;
+    if ($("addbox").classList.contains("show")) closeAdd();
+    else if ($("limitbox").classList.contains("show")) closeLimit();
   });
   $("manual-toggle").onclick = function () {
     var buka = $("manual").classList.toggle("show");
@@ -1199,7 +1485,6 @@
         // Langsung tampilkan kapal barunya, jangan tunggu putaran berikutnya.
         selectedMmsi = d.mmsi;
         haveFix = false;
-        anim.lat = null;
         toast("Mulai melacak " + (label || d.mmsi));
         pullFull();
         done(true);

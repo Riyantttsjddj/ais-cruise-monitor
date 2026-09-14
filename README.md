@@ -81,12 +81,33 @@ irama nyata tiap kapal  ≈  (N − 1) × 5 detik  +  interval
 
 Angka ini **bukan taksiran** — skrip mengukur durasi putaran yang sebenarnya
 dan menampilkannya di pil status. Kalau tertulis "tiap 21 s", memang segitu
-kenyataannya. Tombol **➕ Tambah kapal** menolak permintaan ke-9 dan menyebut
-batasnya, justru supaya angka di tabel ini tidak diam-diam membengkak.
+kenyataannya. Penambahan kapal ke-(N+1) ditolak dan menyebut batasnya, justru
+supaya angka di tabel ini tidak diam-diam membengkak.
 
-Batasnya bisa diubah lewat `--max-ships`, tetapi ketahuilah konsekuensinya:
-20 kapal berarti satu putaran minimal 95 detik, dan situs sumber menerima
-20 permintaan penuh (~2,3 MB) tiap putaran itu.
+**Batasnya bisa disetel, dan tidak dipaku di kode.** Nilainya adalah kunci
+`max_ships` di `ships.json` — satu tempat saja, tidak ada salinan kedua:
+
+```json
+{ "max_ships": 8, "ships": [ … ] }
+```
+
+Bisa juga diubah dari halaman: **klik angka "3 / 8"** di sebelah judul *Kapal
+dilacak*, lalu isi angkanya atau pakai tombol cepat (1, 2, 3, 5, 8, 12, 20).
+Perubahan itu ditulis kembali ke `ships.json` lewat commit, jadi ikut tercatat
+di riwayat git dan bisa dibalik seperti perubahan lain. Rentangnya 1–20.
+
+Menurunkan batas **di bawah** jumlah kapal yang sedang dilacak itu boleh, dan
+**tidak menghapus kapal apa pun** — kapal yang sudah dilacak tetap dilacak,
+yang ditahan hanya penambahan baru. Menghapus kapal diam-diam karena Anda
+mengetik angka lebih kecil jauh lebih buruk daripada sekadar menahan
+penambahan. Angka "3 / 3" di panel berubah warna sebagai penanda bahwa batasnya
+sedang menahan.
+
+20 adalah plafonnya, dan itu batas kesopanan terhadap situs sumbernya, bukan
+angka keramat: 20 kapal berarti satu putaran minimal 95 detik dan ~2,3 MB tiap
+putaran. Di Vercel, `--max-ships` tidak ada gunanya (tidak ada CLI di sana) —
+pakai `ships.json` atau tombol di halaman. Flag CLI itu tetap ada untuk versi
+lokal, dan kalau disebut ia **menang** atas `ships.json`.
 
 Kalau mau selalu rapat tanpa adaptif: `--idle-interval 0`.
 Kalau mau hemat penuh (mis. untuk pantauan jangka panjang): `--interval 90 --idle-interval 600`.
@@ -105,7 +126,7 @@ jadwal — berguna justru saat mode sandar sedang longgar.
 | `--interval` | `6` | Jeda antar-poll (detik) saat kapal **bergerak** |
 | `--idle-interval` | `300` | Jeda saat kapal **sandar**. Isi `0` untuk mematikan mode adaptif |
 | `--idle-speed` | `0.5` | Ambang kecepatan (knot); di bawah ini dianggap sandar |
-| `--max-ships` | `8` | Jumlah maksimum kapal yang boleh dilacak |
+| `--max-ships` | dari `ships.json` | Jumlah maksimum kapal yang boleh dilacak (1–20). Kalau disebut, ia menang atas `max_ships` di `ships.json`; kalau tidak, nilai di berkas itu yang dipakai. |
 | `--ships` | `ships.json` | Berkas konfigurasi kapal. |
 | `--state` | `state.json` | Berkas penyimpanan jejak lintasan. |
 
@@ -232,6 +253,7 @@ hanya siapa yang mengerjakannya:
 | `/api/search?q=…` | Cari di MyShipTracking; 400 kalau kata kunci < 3 huruf | sama |
 | `/api/add?mmsi=…&name=…&imo=…&url=…` | Tambah kapal; 409 kalau MMSI duplikat, bukan angka, atau batas tercapai | sama, tapi menulis lewat commit |
 | `/api/remove?mmsi=…` | Hapus kapal; 409 kalau tidak sedang dilacak atau itu kapal terakhir | sama, tapi menulis lewat commit |
+| `/api/limit?max=…` | Setel berapa kapal yang boleh dilacak; 409 kalau bukan angka, < 1, atau > 20 | sama, tapi menulis lewat commit |
 | `/api/probe` | — | Diagnosis setelah deploy |
 
 Kode status dan bentuk balasannya sengaja dibuat identik di kedua versi, jadi
@@ -254,6 +276,7 @@ MyShipTracking.
 | Tombol | Fungsi |
 |---|---|
 | ➕ Tambah kapal | Buka kotak pencarian / isian manual |
+| **3 / 8** (klik) | Buka kotak **Batas jumlah kapal** untuk menyetel berapa kapal yang boleh dilacak. Angkanya berubah warna kalau batasnya sedang menahan |
 | × (di baris kapal) | Hapus kapal — perlu dua ketukan |
 | 🗺️ Peta | Ganti lapisan: terang → satelit → gelap |
 | 🔄 Cek | **Polling manual** — paksa pengecekan kapal yang sedang dipilih, tanpa menunggu jadwal |
@@ -262,9 +285,25 @@ MyShipTracking.
 | ℹ️ Info | Munculkan lagi catatan keterlambatan data setelah disembunyikan |
 
 Daftar **Kapal dilacak** di atas panel adalah pemilihnya: klik satu baris untuk
-memindahkan peta, penanda, jejak, dan seluruh panel detail ke kapal itu. Hanya
-kapal yang sedang dipilih yang punya penanda di peta — supaya tidak ada
-delapan penanda yang saling menutupi.
+memindahkan panel detail, penekanan peta, dan jejak penuh ke kapal itu.
+
+**Semua kapal yang dilacak digambar sekaligus di peta**, bukan hanya yang
+sedang dipilih:
+
+- Kapal **terpilih** tampil besar, berlabel, dengan halo berdenyut dan jejak
+  lintasan penuh (sampai 6.000 titik).
+- Kapal **lain** tampil kecil dan lebih redup — tetap bisa diklik untuk
+  dipilih — dengan jejak yang dipotong ke 400 titik terakhir. Jejak penuh untuk
+  delapan kapal berarti ~48.000 titik polyline, dan itu membuat Leaflet
+  tersendat; potongan pendek sudah cukup menunjukkan arah dan lintasan
+  terkininya.
+- Tiap kapal punya **warna sendiri**, dan titik warna di barisnya di panel
+  memakai warna yang sama dengan penandanya di peta. Tanpa itu, delapan ikon
+  kapal yang bentuknya identik tidak bisa dihubungkan dengan barisnya.
+- Saat pertama kali dibuka dengan lebih dari satu kapal, peta **membingkai
+  semuanya** (`fitBounds`, zoom dibatasi 11) supaya "banyak kapal" itu langsung
+  terlihat. Sesudah itu peta kembali mengikuti kapal terpilih — kalau tidak, ia
+  akan melompat jauh setiap kali pilihan berganti.
 
 Pil status di kiri atas menampilkan jumlah kapal dan irama yang sedang dipakai,
 mis. `Data MyShipTracking · 2 kapal · 42× cek · tiap 11 s` atau
@@ -378,8 +417,8 @@ GitHub Actions                     Vercel
 │ poll.yml             │          │ index.html (statis)    │
 │  jadwal + diminta    │          │                        │
 │  tracker.py --once   │          │ api/search  api/add    │
-│         ↓            │          │ api/search  api/add    │
-│  branch `data`  ─────┼── dibaca │ api/remove  api/refresh│
+│         ↓            │          │ api/remove  api/limit  │
+│  branch `data`  ─────┼── dibaca │ api/refresh            │
 │  data.json           │    oleh  │        ↓               │
 │  state.json          │          │  GitHub Contents API   │
 └──────────────────────┘          │  → commit ships.json   │
@@ -514,7 +553,7 @@ kerusakannya:
 
 | Penjaga | Yang dilakukan |
 |---|---|
-| **Batas 8 kapal** | penambahan ke-9 ditolak. Ini penjaga yang sebenarnya — tidak ada yang bisa membanjiri repo dengan ribuan kapal |
+| **Batas kapal (`max_ships`)** | penambahan melewati batas ditolak. Ini penjaga yang sebenarnya — tidak ada yang bisa membanjiri repo dengan ribuan kapal. Batasnya sendiri bisa diubah siapa pun yang menemukan halamannya, tapi plafonnya 20 dan itu tetap menahan banjirnya |
 | **Tanpa header CORS** | situs lain tidak bisa memanggil endpoint tulis dari browser pengunjungnya |
 | **Pembatas laju per-IP** | menahan tombol yang ditekan bertubi-tubi. **Best-effort saja** — disimpan di memori proses, dan Vercel bisa menjalankan beberapa instans lalu mematikannya kapan saja |
 | **Riwayat git** | tiap perubahan tercatat dan bisa dibalik |
