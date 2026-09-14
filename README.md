@@ -610,6 +610,10 @@ Sejak 14 Sep 2026 halamannya terkunci. Membuka `/` tanpa cookie akan
 dialihkan ke `/kunci.html`, dan seluruh `/api/*` kecuali `/api/buka` menjawab
 `401` dengan JSON. Kodenya **6 digit**, dan tidak pernah ditulis di repo ini.
 
+**Kodenya tidak "sekali masuk lalu bebas".** Setiap kali halaman dimuat — termasuk
+tiap muat ulang — kodenya diminta lagi, dan tidak ada cookie yang bertahan setelah
+peramban ditutup.
+
 **Yang dijaga, dan yang tidak.** Repo ini publik, jadi `data.json` di branch
 `data` masih bisa dibaca siapa pun yang tahu URL raw-nya. Gerbang ini melindungi
 **halamannya dan endpoint-nya** — termasuk `/api/add`, `/api/remove`,
@@ -630,6 +634,28 @@ pun yang melihat cookie-nya bisa membaliknya jadi kode aslinya dengan mencoba
 dibalik sama sekali — dan efek sampingnya, Python dan JavaScript tidak perlu
 menghitung nilai yang sama persis, sehingga seluruh kelas bug "dua bahasa
 menghitung berbeda, semua orang terkunci" hilang.
+
+**Kodenya diminta ulang setiap halaman dimuat.** Ini disengaja: melihat peta
+selalu berarti mengetik kode lagi. Yang membuatnya bekerja adalah **tiket
+sekali-pakai**, dan mekanismenya perlu dipahami sebelum ada yang mengubahnya:
+
+- Cookie `kunci` (token pembukanya) **tidak cukup** untuk membuka halaman.
+- `/api/buka` memasang cookie kedua, `sekali`, sebagai tiket.
+- Gerbang hanya mengizinkan **halaman** kalau tiket itu ada, lalu **menghapusnya**
+  dalam balasan yang sama — satu permintaan, satu tiket.
+- Muat ulang karena itu tiba dengan cookie `kunci` tapi tanpa tiket → kembali ke
+  halaman kunci.
+- **Endpoint (`/api/*`) tidak menuntut tiket.** Halaman yang sudah terbuka
+  memanggilnya terus-menerus; kalau tiap panggilan menuntut kode, tidak ada yang
+  bisa dipakai.
+
+Efek sampingnya: membuka tab kedua ke `/`, atau memuat ulang di tab mana pun,
+mengeluarkan tab yang lain juga — cookie itu milik peramban, bukan milik tab.
+
+**Tidak ada `Max-Age` sama sekali.** Kedua cookie adalah cookie **sesi**:
+peramban membuangnya saat ditutup. Tidak ada "aktivitas login" yang tersimpan di
+perangkat. Ini juga yang membuat gerbangnya mengeluarkan cookie-nya sendiri
+begitu halaman dikunci.
 
 **Mengganti kode:**
 
@@ -663,9 +689,9 @@ atas.
 | `middleware.js` | gerbang di edge. Butuh `package.json` dengan `"type": "module"` — Vercel mensyaratkan itu untuk middleware di proyek tanpa framework |
 | `gerbang.js` | logika keputusannya saja, tanpa impor Vercel, supaya bisa diuji tanpa mendeploy |
 | `kunci.html` | halaman kuncinya. Berdiri sendiri, tanpa satu pun permintaan ke luar |
-| `api/buka.py` | memeriksa kode, memasang cookie |
+| `api/buka.py` | memeriksa kode, memasang kedua cookie (kredensial + tiket) |
 
-Dua hal yang mudah dirusak tanpa sadar saat mengubah berkas-berkas itu:
+Tiga hal yang mudah dirusak tanpa sadar saat mengubah berkas-berkas itu:
 
 - **Redirect-nya harus tetap 302.** 301/308 di-cache peramban selamanya, dan
   peramban yang pernah membuka situs saat terkunci akan terus dilempar ke halaman
@@ -674,6 +700,17 @@ Dua hal yang mudah dirusak tanpa sadar saat mengubah berkas-berkas itu:
 - **Jangan mengganti `NILAI_KUNCI` jadi hash dari `KUNCI`.** Itu tampak seperti
   penyederhanaan yang masuk akal, dan mengembalikan persis masalah brute force
   yang dihindari di atas.
+- **Jangan memberi `Max-Age` pada cookie mana pun**, dan jangan berhenti
+  menghapus tiket `sekali` saat halaman disajikan. Keduanya mematahkan janji
+  "kodenya diminta ulang setiap halaman dimuat" — dan gejalanya halus: semuanya
+  tampak benar, kodenya tetap diminta, tapi muat ulang diam-diam tidak lagi
+  menanyakannya. `/tmp/uji_kunci.js` bagian 10 dan 12 menjaga keduanya.
+
+Satu hal yang **bukan** bug: kalau `sekali` dipalsukan lewat alat pengembang
+peramban, halaman tetap terbuka — tanpa kode. Itu memang begitu: tiket bukan
+kredensial, ia hanya penanda kesegaran, dan kredensialnya (`kunci`) tetap hanya
+didapat dengan mengetik kodenya. Yang dijaga tiket adalah "apakah halaman ini
+dimuat tepat setelah kodenya dimasukkan", bukan "apakah orang ini tahu kodenya".
 
 **Di lokal tidak ada gerbang sama sekali.** `python3 tracker.py` tetap membuka
 halaman tanpa kode; middleware hanya ada di Vercel. Ini disengaja supaya

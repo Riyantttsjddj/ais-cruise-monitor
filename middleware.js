@@ -1,44 +1,79 @@
-// Gerbang kode akses di edge — ADAPTOR TIPIS.
+// Gerbang kode akses di edge Vercel — adaptor tipis.
 //
-// Seluruh keputusan ada di `gerbang.js`; berkas ini hanya menyambungkannya ke
-// Request/Response dan sengaja dibuat setipis mungkin, supaya tidak ada logika
-// yang hanya bisa diuji dengan cara mendeploy.
+// Seluruh keputusannya ada di `gerbang.js`, yang tidak mengimpor apa pun dan
+// karena itu bisa diuji tanpa Vercel (`/tmp/uji_kunci.js`). Berkas ini cuma
+// menerjemahkan keputusan itu jadi `Response`.
 //
-// Proyek ini tidak memakai framework, jadi dua hal berbeda dari contoh Next.js:
-// `request` di sini adalah `Request` web standar (bukan NextRequest), dan
-// `next()` datang dari paket `@vercel/functions`, bukan dari `next/server`.
-// Itu juga sebabnya `package.json` ada — Vercel mensyaratkan `"type": "module"`
-// untuk middleware di proyek tanpa framework.
-import { next } from "@vercel/functions";
+// Proyek ini tidak memakai framework, jadi `next()` datang dari paket
+// `@vercel/functions`, BUKAN dari `next/server`. Itu juga alasan `package.json`
+// ada dan berisi `"type": "module"`.
 
-import { IZIN, NAMA_COOKIE, TOLAK, bacaCookie, putuskan } from "./gerbang.js";
+import { next } from "@vercel/functions";
+import {
+  IZIN,
+  IZIN_SEKALI,
+  KUNCI,
+  NAMA_COOKIE,
+  NAMA_SEKALI,
+  TOLAK,
+  putuskan,
+} from "./gerbang.js";
 
 export const config = {
-  // Semua jalur KECUALI halaman kunci, endpoint pembuka, dan favicon. Bentuk
-  // negative lookahead ini persis contoh resmi di dokumentasi Vercel.
+  // Negative lookahead: jalur-jalur ini TIDAK pernah lewat gerbang. Tanpa
+  // pengecualian `kunci.html`, halaman kuncinya mengunci dirinya sendiri; tanpa
+  // `api/buka`, tidak ada cara memasukkan kodenya sama sekali.
   matcher: ["/((?!kunci\\.html|api/buka|favicon\\.ico).*)"],
 };
 
+const HALAMAN_KUNCI = "/kunci.html";
+
+// Menghapus cookie: nilai kosong + Max-Age=0. Nama, Path, dan atribut lain harus
+// sama persis dengan saat dipasang — kalau beda, peramban menganggapnya cookie
+// lain dan yang lama tetap tertinggal.
+function hapus(nama) {
+  return `${nama}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+}
+
 export default function middleware(request) {
   const jalur = new URL(request.url).pathname;
-  const cookie = bacaCookie(request.headers.get("cookie") || "", NAMA_COOKIE);
-  const aksi = putuskan(jalur, cookie, process.env.NILAI_KUNCI);
+  const aksi = putuskan(
+    jalur,
+    request.headers.get("cookie") || "",
+    process.env.NILAI_KUNCI,
+  );
 
   if (aksi === IZIN) return next();
 
+  if (aksi === IZIN_SEKALI) {
+    // Sajikan halamannya SEKALIGUS habiskan tiketnya, dalam satu permintaan.
+    // Inilah satu-satunya tempat tiket dibuang, dan itu yang membuat muat ulang
+    // berikutnya jatuh ke KUNCI lagi. `next()` — bukan `Response` buatan sendiri
+    // — karena hanya ini yang tahu cara melanjutkan ke berkas statisnya; header
+    // di sini ditambahkan ke balasan aslinya, bukan menggantikannya.
+    return next({ headers: { "Set-Cookie": hapus(NAMA_SEKALI) } });
+  }
+
   if (aksi === TOLAK) {
-    // API dapat JSON, bukan halaman kunci. JS di halaman mem-parse balasannya;
-    // kalau yang datang HTML, gagalnya muncul sebagai galat parse yang
-    // menyesatkan dan menutupi sebab sebenarnya.
+    // JSON, bukan halaman kunci: pemanggilnya JavaScript, dan halaman HTML tidak
+    // bisa di-parse — gejalanya jadi "JSON parse error", bukan "terkunci".
     return Response.json(
       { ok: false, error: "terkunci — masukkan kode akses dulu" },
       { status: 401, headers: { "Cache-Control": "no-store" } },
     );
   }
 
-  // 302, BUKAN 301/308. Keduanya di-cache peramban selamanya: peramban yang
-  // pernah membuka situs saat terkunci akan terus dilempar ke halaman kunci
-  // walau cookie-nya sudah sah, dan pengguna terjebak tanpa jalan keluar
-  // selain membersihkan cache. Jangan diubah tanpa alasan yang kuat.
-  return Response.redirect(new URL("/kunci.html", request.url), 302);
+  // KUNCI. Cookie-nya ikut dihapus, bukan cuma dialihkan: dengan begitu tidak
+  // ada sisa sesi yang tertinggal di perangkat begitu halamannya ditinggalkan.
+  //
+  // 302, dan itu bukan kelalaian: 301/308 di-cache peramban SELAMANYA, sehingga
+  // peramban yang pernah membuka situs saat terkunci akan terus dilempar ke
+  // halaman kunci walau baru saja memasukkan kode yang benar.
+  const kepala = new Headers({
+    Location: new URL(HALAMAN_KUNCI, request.url).toString(),
+    "Cache-Control": "no-store",
+  });
+  kepala.append("Set-Cookie", hapus(NAMA_COOKIE));
+  kepala.append("Set-Cookie", hapus(NAMA_SEKALI));
+  return new Response(null, { status: 302, headers: kepala });
 }

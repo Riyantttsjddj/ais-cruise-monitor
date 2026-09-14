@@ -14,6 +14,12 @@ JavaScript tidak perlu menghitung hash yang sama persis. Seluruh kelas bug
 
 Cara membuat `NILAI_KUNCI` ada di README (bagian "Kode akses"). Nilainya
 sengaja tidak pernah dibuat oleh alat bantu mana pun di repo ini.
+
+Dan satu hal yang diminta pengguna secara eksplisit: **jangan menyimpan
+aktivitas login**. Karena itu tidak ada `Max-Age` sama sekali (kedua cookie
+sesi, hilang saat peramban ditutup), dan salah satunya — `sekali` — adalah
+tiket sekali-pakai yang dihabiskan gerbang begitu satu halaman tersaji. Muat
+ulang karena itu selalu menanyakan kodenya lagi. Penjelasannya di `_cookies`.
 """
 
 import hmac
@@ -30,10 +36,6 @@ import vlib  # noqa: E402
 # Kodenya 6 digit. Apa pun yang jauh lebih panjang dari ini tidak mungkin benar,
 # dan membacanya hanya membuang memori.
 BATAS_BODY = 1024
-
-# 30 hari. Cukup lama supaya tidak mengetik ulang terus, cukup pendek supaya
-# perangkat yang dipakai bersama tidak terbuka selamanya.
-UMUR_COOKIE = 2592000
 
 
 class handler(BaseHTTPRequestHandler):
@@ -76,7 +78,7 @@ class handler(BaseHTTPRequestHandler):
                 raise vlib.ApiError("kode salah", 403)
 
             vlib.kirim(self, {"ok": True, "pesan": "terbuka"},
-                       200, {"Set-Cookie": self._cookie(nilai)})
+                       200, [("Set-Cookie", c) for c in self._cookies(nilai)])
         except vlib.ApiError as exc:
             vlib.kirim(self, {"ok": False, "error": exc.pesan}, exc.kode)
         except Exception as exc:  # noqa: BLE001
@@ -105,7 +107,18 @@ class handler(BaseHTTPRequestHandler):
             return ""
         return str(isi.get("kode") or "").strip()
 
-    def _cookie(self, nilai: str) -> str:
+    def _cookies(self, nilai: str) -> list:
+        # Dua cookie, dan keduanya SENGAJA tanpa `Max-Age`.
+        #
+        # Tanpa `Max-Age` keduanya jadi cookie SESI: peramban membuangnya saat
+        # ditutup, dan tidak ada "aktivitas login" yang tersimpan di perangkat.
+        #
+        #   `kunci`  — token pembukanya. Ini yang diperiksa gerbang.
+        #   `sekali` — tiket sekali-pakai. Gerbang hanya mengizinkan HALAMAN
+        #              kalau tiket ini ada, lalu menghapusnya begitu satu halaman
+        #              tersaji. Karena itu muat ulang selalu menanyakan kodenya
+        #              lagi: cookie `kunci` saja tidak cukup untuk membuka halaman.
+        #
         # `Secure` HANYA saat permintaannya benar-benar https. Kalau dipasang
         # mutlak, peramban membuang cookie-nya saat diuji lewat `vercel dev` di
         # http://localhost — jadi alur membukanya tidak bisa diuji lokal sama
@@ -115,8 +128,8 @@ class handler(BaseHTTPRequestHandler):
         # `HttpOnly`  : JavaScript tidak bisa membaca tokennya.
         # `SameSite=Lax`: situs lain tidak bisa memancing permintaan bertoken.
         https = (self.headers.get("x-forwarded-proto") or "").lower() == "https"
-        bagian = [f"kunci={nilai}", "Path=/", "HttpOnly", "SameSite=Lax",
-                  f"Max-Age={UMUR_COOKIE}"]
+        bagian = ["Path=/", "HttpOnly", "SameSite=Lax"]
         if https:
             bagian.append("Secure")
-        return "; ".join(bagian)
+        ekor = "; ".join(bagian)
+        return [f"kunci={nilai}; {ekor}", f"sekali=1; {ekor}"]

@@ -10,12 +10,25 @@
 // Catatan cakupan: karena repo-nya tetap publik, gerbang ini menjaga HALAMAN
 // dan ENDPOINT-nya, bukan datanya. `data.json` di branch `data` masih bisa
 // dibaca siapa pun yang tahu URL raw-nya.
+//
+// Dua tingkat, dan bedanya disengaja:
+//   * ENDPOINT (`/api/*`) cukup bermodal cookie — halaman yang sudah terbuka
+//     memanggilnya terus-menerus, dan kalau tiap panggilan menuntut kode, tidak
+//     ada yang bisa dipakai.
+//   * HALAMAN menuntut tiket sekali-pakai di atas cookie, supaya tiap muat ulang
+//     menanyakan kodenya lagi.
 
 export const IZIN = "izin";
+// Izinkan, TAPI pakai tiket sekali-pakai yang dibawa permintaan ini. Middleware
+// menerjemahkannya jadi `next()` yang menghapus cookie tiket dari peramban.
+export const IZIN_SEKALI = "izin-sekali";
 export const KUNCI = "kunci";
 export const TOLAK = "tolak";
 
 export const NAMA_COOKIE = "kunci";
+
+// Cookie penanda "baru saja memasukkan kode". Lihat `putuskan` untuk alasannya.
+export const NAMA_SEKALI = "sekali";
 
 // Jalur yang TIDAK pernah dialihkan. Tanpa pengecualian ini halaman kuncinya
 // mengunci dirinya sendiri, dan situsnya tidak bisa dibuka sama sekali.
@@ -53,12 +66,17 @@ export function samaAman(a, b) {
 }
 
 
-export function putuskan(jalur, cookieKunci, nilaiKunci) {
+export function putuskan(jalur, headerCookie, nilaiKunci) {
   const path = String(jalur || "/");
   if (JALUR_BEBAS.includes(path)) return IZIN;
 
+  // Yang masuk header mentah, bukan nilai per cookie. Itu disengaja: dengan
+  // begitu tidak ada cara middleware lupa membaca cookie kedua — kesalahan yang
+  // akibatnya "halaman terbuka tanpa kode" dan tidak kelihatan dari call site.
+  const dapat = bacaCookie(headerCookie, NAMA_COOKIE);
+  const sekali = bacaCookie(headerCookie, NAMA_SEKALI);
+
   const diharapkan = String(nilaiKunci ?? "");
-  const dapat = String(cookieKunci ?? "");
   const api = path === "/api" || path.startsWith("/api/");
 
   // Gagal tertutup. Urutannya PENTING: pemeriksaan ini harus SEBELUM
@@ -67,6 +85,20 @@ export function putuskan(jalur, cookieKunci, nilaiKunci) {
   // dan seluruh situs terbuka bagi siapa pun yang tidak mengirim cookie.
   if (!diharapkan) return api ? TOLAK : KUNCI;
 
-  if (samaAman(dapat, diharapkan)) return IZIN;
-  return api ? TOLAK : KUNCI;
+  if (!samaAman(dapat, diharapkan)) return api ? TOLAK : KUNCI;
+
+  // Endpoint cukup bermodal cookie. Halamannya yang butuh lebih.
+  if (api) return IZIN;
+
+  // HALAMAN butuh tiket sekali-pakai, bukan cuma cookie.
+  //
+  // Ini yang membuat tiap muat ulang menuntut kode lagi. Cookie saja tidak
+  // cukup: `sekali` hanya dipasang `/api/buka` (jadi harus mengetik kode dulu),
+  // dan dihapus dari peramban begitu satu halaman tersaji. Muat ulang membawa
+  // cookie `kunci` tanpa `sekali` — jadi jatuh ke KUNCI lagi.
+  //
+  // Efek sampingnya disengaja: cookie yang cuma didapat dari memindahkan profil
+  // peramban TIDAK bisa membuka halaman; pemiliknya masih harus mengetik kodenya.
+  if (sekali) return IZIN_SEKALI;
+  return KUNCI;
 }
