@@ -588,10 +588,27 @@
       "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
       { maxZoom: 19, attribution: "Esri, Maxar, Earthstar Geographics" }
     ),
-    "Gelap": L.tileLayer(
-      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-      { maxZoom: 20, attribution: "&copy; OpenStreetMap &copy; CARTO", subdomains: "abcd" }
-    )
+    // Dulu di sini CARTO (basemaps.cartocdn.com/dark_all). Sekarang setiap
+    // ubinnya dicap diagonal "API KEY REQUIRED" — dan karena "Gelap" adalah
+    // lapisan DEFAULT, tulisan itulah yang pertama terlihat saat halaman
+    // dibuka. Cermin lamanya di fastly sudah diperiksa dan TIDAK menolong:
+    // berkasnya identik bit-per-bit (md5 sama persis).
+    // Gantinya Canvas World_Dark_Gray milik Esri — host yang sama dengan
+    // "Satelit", yang sudah terbukti melayani tanpa kunci dan ubinnya bersih.
+    // Base-nya polos tanpa nama tempat (diperiksa di z6 dan z10), jadi
+    // Reference-nya ikut dipasang; teksnya abu-abu terang (rata-rata 151,150,152)
+    // sehingga terbaca di atas latar gelap.
+    "Gelap": L.layerGroup([
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 20,
+          attribution: "Esri, HERE, Garmin, &copy; OpenStreetMap contributors" }
+      ),
+      L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
+        { maxZoom: 20 }
+      )
+    ])
   };
   var layerNames = Object.keys(LAYERS);
 

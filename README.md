@@ -285,6 +285,19 @@ MyShipTracking.
 | 〰️ Jejak | Tampilkan/sembunyikan garis lintasan |
 | ℹ️ Info | Munculkan lagi catatan keterlambatan data setelah disembunyikan |
 
+**Lapisan peta** memakai tiga penyedia yang semuanya tanpa kunci: OpenStreetMap
+(terang), Esri World Imagery (satelit), dan Esri Canvas World Dark Gray
+(gelap — inilah yang terbuka lebih dulu). Lapisan gelap **dulu** memakai CARTO
+(`basemaps.cartocdn.com/dark_all`); sejak sekitar 2026 setiap ubinnya dicap
+diagonal **"API KEY REQUIRED"**, dan karena lapisan itu yang pertama terbuka,
+tulisan itulah yang langsung terlihat. Cermin lamanya di fastly **tidak
+menolong** — berkasnya identik bit-per-bit (md5 sama). Canvas gelap Esri datang
+dari host yang sama dengan lapisan satelit dan ubinnya bersih; karena basenya
+polos tanpa nama tempat (diperiksa di z6 dan z10), lapisan
+`World_Dark_Gray_Reference` ikut dipasang sebagai lapisan kedua di dalam satu
+`L.layerGroup`. Atribusi "Esri, HERE, Garmin, © OpenStreetMap contributors"
+ada di base-nya dan wajib dipertahankan.
+
 Daftar **Kapal dilacak** di atas panel adalah pemilihnya: klik satu baris untuk
 memindahkan panel detail, penekanan peta, dan jejak penuh ke kapal itu.
 
