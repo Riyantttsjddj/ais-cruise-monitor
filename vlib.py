@@ -57,8 +57,13 @@ class ApiError(Exception):
 # ------------------------------------------------------------ HTTP helpers
 
 
-def kirim(handler, payload: dict, kode: int = 200):
+def kirim(handler, payload: dict, kode: int = 200, tambahan: dict | None = None):
     """Kirim balasan JSON.
+
+    `tambahan` untuk header di luar tiga yang selalu ada — dipakai
+    `/api/buka` untuk `Set-Cookie`. Sengaja berupa parameter, bukan ditulis
+    langsung oleh pemanggil, supaya Content-Length dan Content-Type tidak
+    pernah bisa tertimpa dan merusak balasannya.
 
     Sengaja TIDAK ada header `Access-Control-Allow-Origin`. Fungsi ini
     se-origin dengan UI-nya (keduanya di domain Vercel yang sama), jadi CORS
@@ -70,6 +75,8 @@ def kirim(handler, payload: dict, kode: int = 200):
     handler.send_response(kode)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Cache-Control", "no-store")
+    for nama, nilai in (tambahan or {}).items():
+        handler.send_header(nama, nilai)
     handler.send_header("Content-Length", str(len(body)))
     handler.end_headers()
     handler.wfile.write(body)

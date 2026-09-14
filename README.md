@@ -604,6 +604,81 @@ awalan empat hurufnya.
 **poll**, tekan **Run workflow** sekali. Setelah itu ia jalan sendiri tiap 5
 menit.
 
+### Kode akses
+
+Sejak 14 Sep 2026 halamannya terkunci. Membuka `/` tanpa cookie akan
+dialihkan ke `/kunci.html`, dan seluruh `/api/*` kecuali `/api/buka` menjawab
+`401` dengan JSON. Kodenya **6 digit**, dan tidak pernah ditulis di repo ini.
+
+**Yang dijaga, dan yang tidak.** Repo ini publik, jadi `data.json` di branch
+`data` masih bisa dibaca siapa pun yang tahu URL raw-nya. Gerbang ini melindungi
+**halamannya dan endpoint-nya** — termasuk `/api/add`, `/api/remove`,
+`/api/limit`, `/api/refresh`, dan `/api/search`, yang mengubah `ships.json` atau
+menghabiskan jatah Actions. Kalau suatu saat datanya juga mau ditutup, itu
+pekerjaan lain: repo privat plus endpoint proxy `/api/data`.
+
+**Dua rahasia, dan pemisahannya disengaja.**
+
+| Env var | Isi | Dipakai oleh |
+|---|---|---|
+| `KUNCI` | kode 6 digit yang diketik pengguna | `api/buka.py` |
+| `NILAI_KUNCI` | token acak 64 heksadesimal | `middleware.js` (isi cookie) |
+
+Cookie-nya **bukan** hash dari kodenya. Kalau nilainya hash dari 6 digit, siapa
+pun yang melihat cookie-nya bisa membaliknya jadi kode aslinya dengan mencoba
+10⁶ kandidat dalam hitungan milidetik. Token acak yang berdiri sendiri tidak bisa
+dibalik sama sekali — dan efek sampingnya, Python dan JavaScript tidak perlu
+menghitung nilai yang sama persis, sehingga seluruh kelas bug "dua bahasa
+menghitung berbeda, semua orang terkunci" hilang.
+
+**Mengganti kode:**
+
+```bash
+printf 'KODE-BARU\n' | vercel env add KUNCI production --sensitive --force
+vercel --prod
+```
+
+**Mengeluarkan semua orang** (misalnya perangkat hilang) — ganti tokennya, bukan
+kodenya. Mengganti `KUNCI` saja **tidak** mengeluarkan siapa pun: yang tersimpan
+di cookie adalah `NILAI_KUNCI`, jadi orang yang sudah pernah masuk tetap masuk.
+
+```bash
+python3 -c "import secrets;print(secrets.token_hex(32))" \
+  | vercel env add NILAI_KUNCI production --sensitive --force
+vercel --prod
+```
+
+Keduanya harus dipasang untuk **Production dan Preview**. Kalau hanya
+Production, deploy preview gagal-tertutup dan yang teruji di sana cuma jalur
+gagalnya.
+
+**Kalau terkunci sendiri:** tidak ada jalur pemulihan di dalam kode — memang
+begitu yang dikehendaki. Yang bisa dilakukan adalah mengganti `KUNCI` seperti di
+atas.
+
+**Berkasnya:**
+
+| Berkas | Perannya |
+|---|---|
+| `middleware.js` | gerbang di edge. Butuh `package.json` dengan `"type": "module"` — Vercel mensyaratkan itu untuk middleware di proyek tanpa framework |
+| `gerbang.js` | logika keputusannya saja, tanpa impor Vercel, supaya bisa diuji tanpa mendeploy |
+| `kunci.html` | halaman kuncinya. Berdiri sendiri, tanpa satu pun permintaan ke luar |
+| `api/buka.py` | memeriksa kode, memasang cookie |
+
+Dua hal yang mudah dirusak tanpa sadar saat mengubah berkas-berkas itu:
+
+- **Redirect-nya harus tetap 302.** 301/308 di-cache peramban selamanya, dan
+  peramban yang pernah membuka situs saat terkunci akan terus dilempar ke halaman
+  kunci walau cookie-nya sudah sah — pengguna terjebak tanpa jalan keluar selain
+  membersihkan cache.
+- **Jangan mengganti `NILAI_KUNCI` jadi hash dari `KUNCI`.** Itu tampak seperti
+  penyederhanaan yang masuk akal, dan mengembalikan persis masalah brute force
+  yang dihindari di atas.
+
+**Di lokal tidak ada gerbang sama sekali.** `python3 tracker.py` tetap membuka
+halaman tanpa kode; middleware hanya ada di Vercel. Ini disengaja supaya
+pekerjaan di mesin sendiri tidak terganggu.
+
 ### Kenapa poller-nya di GitHub, bukan di Vercel
 
 Cron Vercel Hobby minimum **sekali sehari**, dan ekspresi yang lebih rapat
@@ -642,22 +717,27 @@ berfungsi sebagai jaring pengaman, bukan sebagai metronom.
 
 ### Kalau disalahgunakan
 
-Anda memilih **tanpa kunci**, jadi siapa pun yang menemukan alamatnya bisa
-menambah atau menghapus kapal. Itu keputusan yang sadar, dan yang menahan
-kerusakannya:
+Sejak 14 Sep 2026 endpoint tulisnya ada di balik kode akses (lihat **Kode
+akses** di atas), jadi yang menahan penyalahgunaan sekarang berlapis:
 
 | Penjaga | Yang dilakukan |
 |---|---|
-| **Batas kapal (`max_ships`)** | penambahan melewati batas ditolak. Ini penjaga yang sebenarnya — tidak ada yang bisa membanjiri repo dengan ribuan kapal. Batasnya sendiri bisa diubah siapa pun yang menemukan halamannya, tapi plafonnya 20 dan itu tetap menahan banjirnya |
+| **Gerbang kode akses** | `/api/add`, `/api/remove`, dan `/api/limit` tidak bisa dipanggil sama sekali tanpa cookie. Ini penjaga utamanya sekarang |
+| **Batas kapal (`max_ships`)** | penambahan melewati batas ditolak. Ini yang menahan kerusakan kalau kodenya bocor — tidak ada yang bisa membanjiri repo dengan ribuan kapal. Plafonnya 20 |
 | **Tanpa header CORS** | situs lain tidak bisa memanggil endpoint tulis dari browser pengunjungnya |
-| **Pembatas laju per-IP** | menahan tombol yang ditekan bertubi-tubi. **Best-effort saja** — disimpan di memori proses, dan Vercel bisa menjalankan beberapa instans lalu mematikannya kapan saja |
+| **Pembatas laju per-IP** | menahan tombol yang ditekan bertubi-tubi, termasuk menebak kode di `/api/buka`. **Best-effort saja** — disimpan di memori proses, dan Vercel bisa menjalankan beberapa instans lalu mematikannya kapan saja |
 | **Riwayat git** | tiap perubahan tercatat dan bisa dibalik |
+
+Yang perlu disebut terus terang: **kodenya cuma 6 digit.** Kalau `/api/buka`
+ditekan tanpa henti, pembatas laju di atas memperlambatnya tapi tidak
+menghentikannya — di paket Hobby tidak ada cara yang benar-benar bisa
+menghentikannya. Kode yang lebih panjang jauh lebih aman daripada tambahan kode
+apa pun di sekitar sini.
 
 Risikonya polusi repo, bukan pencurian data: token Anda tidak pernah sampai ke
 browser, hanya dipakai di sisi server. Kalau nanti benar-benar disalahgunakan,
 urutannya: balikkan commitnya (`git revert`), lalu putar ulang tokennya di
-GitHub, lalu hapus deployment-nya di Vercel. Tidak ada kunci `ADMIN_KEY` di
-kode ini — kalau Anda ingin satu, itu perubahan yang perlu ditulis dulu.
+GitHub, lalu ganti kode aksesnya seperti di bagian **Kode akses**.
 
 ### Kalau parser rusak (versi Vercel)
 

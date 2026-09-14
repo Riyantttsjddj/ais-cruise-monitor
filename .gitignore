@@ -8,6 +8,10 @@ run.log
 __pycache__/
 *.pyc
 
+# Dependensi Node — ada sejak `middleware.js` memakai @vercel/functions.
+# Vercel memasangnya sendiri saat build; yang di repo hanya package.json.
+node_modules/
+
 # Sampah editor / OS
 .DS_Store
 *.swp
