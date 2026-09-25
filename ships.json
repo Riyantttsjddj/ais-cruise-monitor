@@ -14,17 +14,6 @@
   ],
   "ships": [
     {
-      "mmsi": "311001033",
-      "name": "WONDER OF THE SEAS",
-      "imo": "9838345",
-      "callsign": "C6EY2",
-      "flag": "Bahamas",
-      "length": 362,
-      "beam": 64,
-      "note": "Oasis-class cruise ship, homeport Miami",
-      "company": "Royal Caribbean"
-    },
-    {
       "mmsi": "357189000",
       "name": "PACIFIC WORLD",
       "imo": "9000259",
