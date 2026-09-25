@@ -19,6 +19,12 @@
       "imo": "9000259",
       "url": "https://www.myshiptracking.com/vessels/pacific-world-mmsi-357189000-imo-9000259",
       "company": "Peace Boat"
+    },
+    {
+      "mmsi": "311001033",
+      "name": "WONDER OF THE SEAS",
+      "imo": "9838345",
+      "url": "https://www.myshiptracking.com/vessels/wonder-of-the-seas-mmsi-311001033-imo-9838345"
     }
   ]
 }
