@@ -108,8 +108,12 @@ class Fetcher:
                 time.sleep(wait)
             self._last_hit[host] = time.time()
 
-    def get(self, url: str, timeout: int = 25):
-        """Kembalikan (body, dari_cache). Body None kalau gagal."""
+    def get(self, url: str, timeout: int = 25, extra: dict | None = None):
+        """Kembalikan (body, dari_cache). Body None kalau gagal.
+
+        `extra` menambah header di atas bawaan (mis. X-Requested-With untuk
+        endpoint JSON CruiseMapper yang menolak permintaan tanpa itu).
+        """
         host = urllib.parse.urlsplit(url).netloc
         entry = self._cache.get(url) or {}
         self._throttle(host)
@@ -118,6 +122,7 @@ class Fetcher:
             "User-Agent": USER_AGENT,
             "Accept": "text/html,application/xhtml+xml",
             "Accept-Language": "en-US,en;q=0.9",
+            **(extra or {}),
         })
         if entry.get("etag"):
             req.add_header("If-None-Match", entry["etag"])
@@ -598,6 +603,73 @@ def clean_imo(href: str) -> str:
     return m.group(1) if m and re.fullmatch(r"\d{7}", m.group(1)) else ""
 
 
+def search_cruisemapper(fetcher: Fetcher, query: str) -> list[dict]:
+    """Pencarian cadangan di CruiseMapper ketika MyShipTracking memblokir.
+
+    CruiseMapper tidak punya endpoint pencarian server-side: JSON
+    `/ship/search.json` selalu membalas indeks penuh (~1.500 kapal, bentuk
+    `{id,name,url,line_id}`) apa pun nilai `q`, jadi pemfilteran nama dilakukan
+    di sini. MMSI/IMO tidak ada di indeks itu — untuk hasil teratas (maks. 5)
+    keduanya diambil dari halaman kapalnya masing-masing; situs menulisnya
+    dalam satu kalimat tetap ("... (MMSI 311020600)") dan tautan pelacaknya
+    memuat `?imo=9383936`.
+
+    Bentuk hasil sama dengan search_vessels agar api/search.py dan panel
+    tidak perlu tahu sumber mana yang dipakai.
+    """
+    needle = query.casefold()
+    raw, _ = fetcher.get("https://www.cruisemapper.com/ship/search.json?q=x",
+                         extra={"X-Requested-With": "XMLHttpRequest"})
+    if not raw:
+        raise SourceError("indeks kapal CruiseMapper kosong")
+    try:
+        index = json.loads(raw)
+    except ValueError as exc:
+        raise SourceError(f"indeks kapal CruiseMapper tidak sah: {exc}") from exc
+
+    hits = [e for e in index
+            if isinstance(e, dict) and needle in str(e.get("name", "")).casefold()]
+    hits.sort(key=lambda e: str(e.get("name", "")).casefold().find(needle))
+    hits = hits[:5]
+
+    results = []
+    for pos, e in enumerate(hits):
+        page = html_mod.unescape(str(e.get("url") or ""))
+        name = text_of(str(e.get("name") or ""))
+        if not page.startswith("http"):
+            page = urllib.parse.urljoin("https://www.cruisemapper.com", page)
+        # Halaman kapal (MMSI+IMO) hanya untuk 3 hasil teratas: satu request
+        # per kapal, dan hasil di luar itu umumnya tidak akan ditambahkan.
+        mmsi = imo = ""
+        if pos < 3:
+            try:
+                ship_raw, _ = fetcher.get(page)
+                if ship_raw:
+                    m = re.search(r"\(MMSI (\d{9})\)", ship_raw)
+                    mmsi = m.group(1) if m else ""
+                    m2 = re.search(r"\?imo=(\d{7})", ship_raw)
+                    imo = m2.group(1) if m2 else ""
+            except Exception as exc:  # noqa: BLE001 — halaman kapal opsional
+                print(f"[search-CruiseMapper] detail {name} gagal: {exc}",
+                      file=sys.stderr)
+        results.append({
+            "name": name,
+            "mmsi": mmsi,
+            "imo": imo,
+            "url": page,
+            "type": "",
+            "area": "",
+            "speed": "",
+            "destination": "",
+            "received": "",
+            "flag": "",
+        })
+    # Tanpa MMSI kapal tidak bisa ditambahkan ke pelacakan (add_ship menolak),
+    # jadi hasil di luar 3 teratas — yang halamannya tidak diambil — tidak
+    # perlu ditampilkan: menampilkan tombol + yang pasti gagal hanya mengecoh.
+    return [r for r in results if r["mmsi"]]
+
+
 def search_vessels(fetcher: Fetcher, query: str) -> list[dict]:
     """Cari kapal lewat halaman pencarian publik MyShipTracking.
 
@@ -605,6 +677,10 @@ def search_vessels(fetcher: Fetcher, query: str) -> list[dict]:
     apa adanya dari href hasil pencarian: urutan slug di sana bisa berbeda dari
     yang disusun vessel_url() (di sana "-mmsi-…-imo-…", di sini "-imo-…-mmsi-…"),
     jadi menebak ulang urutannya hanya menambah risiko salah kapal.
+
+    MyShipTracking memasang Cloudflare challenge terhadap IP server/cloud
+    sejak Nov 2026 (run GitHub Actions dan Vercel kena 403), jadi kegagalan
+    di sini jatuh ke pencarian CruiseMapper — lihat search_cruisemapper().
     """
     query = (query or "").strip()
     if len(query) < 3:
@@ -612,9 +688,12 @@ def search_vessels(fetcher: Fetcher, query: str) -> list[dict]:
 
     url = ("https://www.myshiptracking.com/vessels?name="
            + urllib.parse.quote_plus(query))
-    raw, _ = fetcher.get(url)
+    try:
+        raw, _ = fetcher.get(url)
+    except urllib.error.HTTPError:
+        raw = None
     if not raw:
-        raise SourceError("halaman pencarian kosong")
+        return search_cruisemapper(fetcher, query)
 
     # Tabel hasil punya id tetap. Tabel header ("myst-table-1-head") memuat
     # judul kolom yang sama tapi tidak punya <tbody>, jadi tidak ikut terbaca.
