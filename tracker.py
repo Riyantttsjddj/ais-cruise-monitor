@@ -1103,20 +1103,42 @@ def save_config(path: Path, store: Store):
 
 # ------------------------------------------------------ loop pengambilan data
 
+# Cooldown per-sumber setelah penolakan 401/403/429 (blokiran bot): selama
+# ini sumber itu dilewati langsung ke cadangan. In-memory saja — run GitHub
+# Actions baru selalu mulai bersih, dan itu benar: percobaan pertama layak
+# dicoba ulang tiap run.
+SOURCE_COOLDOWN: dict[str, float] = {}
+SOURCE_COOLDOWN_SECS = 3600.0
+
 
 def fetch_ship(fetcher: Fetcher, ship):
     """Coba tiap sumber berurutan untuk SATU kapal, berhenti di yang berhasil.
 
     Kembalikan (snapshot, daftar_error). Snapshot None berarti semua sumber gagal.
+
+    Sumber yang baru saja menolak seluruh halaman (403/blokiran bot, seperti
+    MyShipTracking sejak Nov 2026 yang memasang Cloudflare challenge terhadap
+    IP runner GitHub) dilewati dulu sesuai cooldown — MENCoba lagi tiap 5 menit
+    hanya menambah request yang pasti gagal dan memperlambat fallback.
     """
     errors = []
     for name, fn in SOURCES:
+        cool = SOURCE_COOLDOWN.get(name, 0)
+        if cool > time.time():
+            errors.append(f"{name}: dilewati, cooldown sampai "
+                          f"{datetime.datetime.fromtimestamp(cool, datetime.UTC):%H:%M}Z")
+            continue
         try:
             return fn(fetcher, ship), errors
         except Exception as exc:  # noqa: BLE001
             errors.append(f"{name}: {type(exc).__name__}: {exc}")
             print(f"[{name}] gagal ({ship.label or ship.mmsi}): {exc}",
                   file=sys.stderr)
+            # Cooldown hanya untuk penolakan tingkat halaman (blokiran bot).
+            # Kesalahan parsing atau slug salah bisa teratasi sendiri —
+            # jangan biarkan satu bug parser mematikan sumbernya.
+            if isinstance(exc, urllib.error.HTTPError) and exc.code in (401, 403, 429):
+                SOURCE_COOLDOWN[name] = time.time() + SOURCE_COOLDOWN_SECS
     return None, errors
 
 
